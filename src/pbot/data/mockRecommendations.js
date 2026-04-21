@@ -1,0 +1,30 @@
+export const mockRecommendations = [
+  {
+    id: "a1",
+    title: "Micro-drill: Domain & Range",
+    subtitle: "5 questions - based on your weak topic",
+    duration: "3-5 min",
+    primaryLabel: "Start",
+    secondaryLabel: "Set as topic",
+    target: "/drill/domain-range",
+    contextPatch: { topic: "Domain & Range", subject: "Mathematics" },
+  },
+  {
+    id: "a2",
+    title: "Quick Notes: Functions (Key Ideas)",
+    subtitle: "Short revision before next quiz",
+    duration: "3 min",
+    primaryLabel: "Open",
+    secondaryLabel: "Set as topic",
+    target: "/notes/functions",
+    contextPatch: { topic: "Functions" },
+  },
+  {
+    id: "a3",
+    title: "Quiz Set: Function & Quadratic (10Q)",
+    subtitle: "Practice retrieval, track mastery update",
+    duration: "7-10 min",
+    primaryLabel: "Go to Quiz",
+    target: "/quiz/functions-quadratic",
+  },
+];

@@ -750,6 +750,11 @@
   cursor: pointer;
 }
 
+.pandai-menu.is-locked .pandai-menu__item:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
 .pandai-menu__item.is-open {
   background: #f1fbf5;
   color: #45b57d;
@@ -1551,21 +1556,6 @@
   clip-path: polygon(100% 0, 100% 100%, 0 100%);
 }
 
-.pandai-home-guide__dismiss {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 28px;
-  height: 28px;
-  border: 0;
-  border-radius: 999px;
-  background: #eef6ef;
-  color: #6f8076;
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-}
-
 .pandai-home-guide__bubble h3 {
   margin: 0;
   font-size: 20px;
@@ -1584,6 +1574,11 @@
 .pandai-home-stage.is-guided .pandai-recent {
   filter: blur(1.8px);
   opacity: 0.2;
+}
+
+.pandai-home-stage.is-guided .pandai-subject-card:not(.is-guide-focus),
+.pandai-home-stage.is-guided .pandai-recent {
+  pointer-events: none;
 }
 
 .pandai-subject-card:hover,
@@ -1614,6 +1609,10 @@
     0 0 0 4px rgba(255, 255, 255, 0.88),
     0 28px 54px rgba(45, 109, 72, 0.18);
   transform: translateY(-2px);
+}
+
+.pandai-subject-card.is-guide-locked {
+  cursor: not-allowed;
 }
 
 .pandai-thumb {

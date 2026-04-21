@@ -971,7 +971,6 @@ function AppShell() {
   const mathGuideCardRef = useRef(null);
   const [analysisSubjectId, setAnalysisSubjectId] = useState("kssm-am");
   const [learnMenuOpen, setLearnMenuOpen] = useState(false);
-  const [dismissedGuideKeys, setDismissedGuideKeys] = useState([]);
   const hasSelectedSubject = Boolean(pageContext.selectedSubject);
   const showQuizWorkspace = pageContext.route === "quiz" && hasSelectedSubject;
   const isMathSelected = pageContext.selectedSubject === "Mathematics";
@@ -990,7 +989,6 @@ function AppShell() {
   const homeGuideKey = location.state?.showHomeGuide ? location.key : null;
   const showHomeSubjectGuide =
     Boolean(homeGuideKey) &&
-    !dismissedGuideKeys.includes(homeGuideKey) &&
     pageContext.route === "home" &&
     !pageContext.selectedSubject;
 
@@ -1038,18 +1036,11 @@ function AppShell() {
     mathGuideCardRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [showHomeSubjectGuide]);
 
-  function dismissHomeGuide() {
-    if (!homeGuideKey) {
+  function selectSubject(subject) {
+    if (showHomeSubjectGuide && subject !== "Mathematics") {
       return;
     }
 
-    setDismissedGuideKeys((prev) =>
-      prev.includes(homeGuideKey) ? prev : [...prev, homeGuideKey],
-    );
-  }
-
-  function selectSubject(subject) {
-    dismissHomeGuide();
     actions.setSelectedSubject(subject);
     actions.clearTopic();
     actions.setRoute("quiz");
@@ -1057,6 +1048,10 @@ function AppShell() {
   }
 
   function openRecentActivity(activity) {
+    if (showHomeSubjectGuide) {
+      return;
+    }
+
     actions.setLastActivity(activity);
     if (activity.subject === "Mathematics") {
       actions.startQuiz({ topic: activity.topic, total: 5 });
@@ -1083,6 +1078,10 @@ function AppShell() {
   }
 
   function openLearnSubView(view, options = {}) {
+    if (showHomeSubjectGuide) {
+      return;
+    }
+
     const fallbackSubject = pageContext.selectedSubject || "Mathematics";
     const fallbackTopic =
       pageContext.selectedTopic || (fallbackSubject === "Mathematics" ? "Functions" : "");
@@ -1158,10 +1157,11 @@ function AppShell() {
   }
 
   function handleMenuSelect(route) {
-    setLearnMenuOpen(false);
-    if (route !== "home") {
-      dismissHomeGuide();
+    if (showHomeSubjectGuide) {
+      return;
     }
+
+    setLearnMenuOpen(false);
     actions.setRoute(route);
     if (route === "home") {
       actions.setSelectedSubject(null);
@@ -1211,7 +1211,7 @@ function AppShell() {
         </header>
 
         <main className="pandai-main">
-          <section className="pandai-menu">
+          <section className={`pandai-menu ${showHomeSubjectGuide ? "is-locked" : ""}`}>
             {TOP_MENU.map((item) => (
               item.id === "learn" ? (
                 <div key={item.id} className="pandai-menu__dropdown" ref={learnMenuRef}>
@@ -1222,6 +1222,7 @@ function AppShell() {
                     } ${learnMenuOpen ? "is-open" : ""}`}
                     aria-haspopup="menu"
                     aria-expanded={learnMenuOpen}
+                    disabled={showHomeSubjectGuide}
                     onClick={() => setLearnMenuOpen((prev) => !prev)}
                   >
                     <span className="pandai-menu__dot" aria-hidden="true" />
@@ -1259,6 +1260,7 @@ function AppShell() {
                   className={`pandai-menu__item ${
                     pageContext.route === item.id ? "is-active" : ""
                   }`}
+                  disabled={showHomeSubjectGuide}
                   onClick={() => handleMenuSelect(item.id)}
                 >
                   <span className="pandai-menu__dot" aria-hidden="true" />
@@ -1607,14 +1609,6 @@ function AppShell() {
                     className="pandai-home-guide__mascot"
                   />
                   <div className="pandai-home-guide__bubble">
-                    <button
-                      type="button"
-                      className="pandai-home-guide__dismiss"
-                      aria-label="Dismiss guide"
-                      onClick={dismissHomeGuide}
-                    >
-                      ×
-                    </button>
                     <h3 id="pandai-home-guide-title">Start with a subject</h3>
                     <p>Choose Mathematics from Home to begin your learning journey.</p>
                   </div>
@@ -1622,30 +1616,29 @@ function AppShell() {
               ) : null}
 
               <section className="pandai-subject-grid">
-                {SUBJECT_CARDS.map((card) => (
-                  <article
-                    key={card.id}
-                    ref={
-                      showHomeSubjectGuide && card.subject === "Mathematics"
-                        ? mathGuideCardRef
-                        : undefined
-                    }
-                    className={`pandai-subject-card ${card.highlight ? "is-highlight" : ""} ${
-                      pageContext.selectedSubject === card.subject ? "is-selected" : ""
-                    } ${showHomeSubjectGuide && card.subject === "Mathematics" ? "is-guide-focus" : ""}`}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`Pilih subjek ${card.subject}`}
-                    aria-describedby={
-                      showHomeSubjectGuide && card.subject === "Mathematics"
-                        ? "pandai-home-guide-title"
-                        : undefined
-                    }
-                    onClick={() => selectSubject(card.subject)}
-                    onKeyDown={(event) =>
-                      handleCardKey(event, () => selectSubject(card.subject))
-                    }
-                  >
+                {SUBJECT_CARDS.map((card) => {
+                  const isGuideFocus = showHomeSubjectGuide && card.subject === "Mathematics";
+                  const isGuideLocked = showHomeSubjectGuide && !isGuideFocus;
+
+                  return (
+                    <article
+                      key={card.id}
+                      ref={isGuideFocus ? mathGuideCardRef : undefined}
+                      className={`pandai-subject-card ${card.highlight ? "is-highlight" : ""} ${
+                        pageContext.selectedSubject === card.subject ? "is-selected" : ""
+                      } ${isGuideFocus ? "is-guide-focus" : ""} ${
+                        isGuideLocked ? "is-guide-locked" : ""
+                      }`}
+                      role="button"
+                      tabIndex={isGuideLocked ? -1 : 0}
+                      aria-label={`Pilih subjek ${card.subject}`}
+                      aria-disabled={isGuideLocked || undefined}
+                      aria-describedby={isGuideFocus ? "pandai-home-guide-title" : undefined}
+                      onClick={() => selectSubject(card.subject)}
+                      onKeyDown={(event) =>
+                        handleCardKey(event, () => selectSubject(card.subject))
+                      }
+                    >
                     <div className={`pandai-thumb tone-${card.thumbTone}`}>
                       <span>{card.icon}</span>
                     </div>
@@ -1659,8 +1652,9 @@ function AppShell() {
                       <h3>{card.topic}</h3>
                       <p>{card.description}</p>
                     </div>
-                  </article>
-                ))}
+                    </article>
+                  );
+                })}
               </section>
 
               <section className="pandai-recent">

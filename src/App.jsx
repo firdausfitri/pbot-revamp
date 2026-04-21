@@ -659,6 +659,7 @@ function WelcomeNameScreen({ learnerName, onNameChange, onPickSuggestion, onCont
 
 function RewardSelectionScreen({ learnerName, selectedReward, onSelectReward, onContinue }) {
   const displayName = getLearnerDisplayName(learnerName);
+  const hasSelectedReward = Boolean(selectedReward);
 
   return (
     <div className="pandai-onboarding-shell">
@@ -734,6 +735,7 @@ function RewardSelectionScreen({ learnerName, selectedReward, onSelectReward, on
           <button
             type="button"
             className="pandai-onboarding-cta pandai-onboarding-cta--solid pandai-onboarding-cta--reward"
+            disabled={!hasSelectedReward}
             onClick={onContinue}
           >
             Start & Earn Coins 🚀
@@ -893,9 +895,7 @@ function PrototypeRewardPage() {
   const navigate = useNavigate();
   const learnerName = readLearnerName();
   const normalizedLearnerName = normalizeLearnerName(learnerName);
-  const [selectedReward, setSelectedReward] = useState(() =>
-    readSelectedReward(REWARD_OPTIONS[1]?.id || REWARD_OPTIONS[0]?.id),
-  );
+  const [selectedReward, setSelectedReward] = useState(() => readSelectedReward());
 
   if (!normalizedLearnerName) {
     return <Navigate to={APP_PATHS.onboardingName} replace />;
@@ -925,10 +925,14 @@ function PrototypeMissionPage() {
   const navigate = useNavigate();
   const learnerName = readLearnerName();
   const normalizedLearnerName = normalizeLearnerName(learnerName);
-  const selectedReward = readSelectedReward(REWARD_OPTIONS[1]?.id || REWARD_OPTIONS[0]?.id);
+  const selectedReward = readSelectedReward();
 
   if (!normalizedLearnerName) {
     return <Navigate to={APP_PATHS.onboardingName} replace />;
+  }
+
+  if (!selectedReward) {
+    return <Navigate to={APP_PATHS.onboardingReward} replace />;
   }
 
   function handleContinue() {

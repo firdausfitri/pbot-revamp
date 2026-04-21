@@ -142,7 +142,7 @@ export function getLearnerInitial(name, fallback = "L") {
   return displayName.charAt(0).toUpperCase();
 }
 
-function resolveRewardId(value, fallback = REWARD_OPTIONS[1]?.id || REWARD_OPTIONS[0]?.id || "") {
+function resolveRewardId(value, fallback = "") {
   const normalized = String(value || "").trim().toLowerCase();
   if (REWARD_OPTIONS.some((option) => option.id === normalized)) {
     return normalized;

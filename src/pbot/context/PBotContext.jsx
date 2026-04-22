@@ -3,8 +3,6 @@ import { createContext, useContext, useMemo, useReducer } from "react";
 import { mockProfile } from "../data/mockProfile";
 import {
   getLearnerDisplayName,
-  readLearnerName,
-  readPreferredLanguage,
   resolveLanguageLabel,
 } from "../../onboarding/profileStorage";
 
@@ -138,6 +136,8 @@ function createQuizContext() {
     inProgress: false,
     currentIndex: 0,
     total: 5,
+    answeredCount: 0,
+    correctCount: 0,
     selectedOption: null,
     saved: false,
     isCorrect: null,
@@ -159,12 +159,12 @@ function resetQuestionState(quizContext) {
   };
 }
 
-function getInitialState() {
+function getInitialState(profile = {}) {
   const defaultGoal = Number(mockProfile.dailyGoalTarget) || 6;
   const defaultProgress = Number(mockProfile.dailyGoalCompleted) || 3;
-  const learnerName = getLearnerDisplayName(readLearnerName(mockProfile.name), "Learner");
+  const learnerName = getLearnerDisplayName(profile.learnerName || mockProfile.name, "Learner");
   const learnerLanguage = resolveLanguageLabel(
-    readPreferredLanguage(mockProfile.language || "BM"),
+    profile.preferredLanguage || mockProfile.language || "BM",
     mockProfile.language || "BM",
   );
 
@@ -391,6 +391,9 @@ function reducer(state, action) {
         ...state,
         quizContext: {
           ...state.quizContext,
+          answeredCount: state.quizContext.answeredCount + 1,
+          correctCount:
+            state.quizContext.correctCount + (action.isCorrect ? 1 : 0),
           checking: false,
           saved: true,
           isCorrect: Boolean(action.isCorrect),
@@ -529,8 +532,8 @@ function getQuizSubState(quizContext) {
   return quizContext.isCorrect ? "saved_correct" : "saved_wrong";
 }
 
-export function PBotContextProvider({ children }) {
-  const [state, dispatch] = useReducer(reducer, undefined, getInitialState);
+export function PBotContextProvider({ children, profile }) {
+  const [state, dispatch] = useReducer(reducer, profile, getInitialState);
 
   const value = useMemo(() => {
     const pbotState = getPBotState(state);

@@ -29,6 +29,9 @@ const TOP_MENU = [
 ];
 
 const QUIZ_STAR_THRESHOLDS = [33.33, 66.67, 100];
+const SECOND_GUIDED_QUESTION_INDEX = 1;
+const SECOND_GUIDED_WRONG_OPTION_ID = "C";
+const THIRD_GUIDED_QUESTION_INDEX = 2;
 
 const SUBJECT_CARDS = [
   {
@@ -839,7 +842,7 @@ function RewardMissionScreen({ learnerName, selectedReward, onContinue }) {
           aria-labelledby="pandai-mission-title"
         >
           <div className="pandai-onboarding-copy">
-            <h1 id="pandai-mission-title">Let&apos;s get your reward faster 🚀</h1>
+            <h1 id="pandai-mission-title">Let's get your reward faster 🚀</h1>
             <p>
               {displayName}, complete small milestones to unlock your
               {" "}
@@ -1112,6 +1115,7 @@ function AppShell() {
   const starCount = QUIZ_STAR_THRESHOLDS.filter(
     (threshold) => progressTrackPercent >= threshold,
   ).length;
+  const isFinalQuizQuestion = quizContext.currentIndex === Math.max(quizContext.total - 1, 0);
   const explanationKey = `${quizContext.currentIndex}:${quizContext.saved ? "saved" : "pending"}`;
   const isExplanationOpen = openExplanationFor === explanationKey;
   const learnerName = getLearnerDisplayName(userContext.name);
@@ -1136,7 +1140,7 @@ function AppShell() {
     !quizContext.inProgress;
   const showQuestionReadGuide =
     Boolean(homeGuideKey) &&
-    onboardingGuideStep === "question" &&
+    (onboardingGuideStep === "question" || onboardingGuideStep === "question-wrong") &&
     showQuizAttempt;
   const showAnswerChoiceGuide =
     Boolean(homeGuideKey) &&
@@ -1144,14 +1148,51 @@ function AppShell() {
     showQuizAttempt;
   const showCorrectAnswerGuide =
     Boolean(homeGuideKey) &&
-    onboardingGuideStep === "answer" &&
+    (onboardingGuideStep === "answer" || onboardingGuideStep === "answer-third") &&
+    showQuizAttempt;
+  const showWrongAnswerGuide =
+    Boolean(homeGuideKey) &&
+    onboardingGuideStep === "answer-wrong" &&
     showQuizAttempt;
   const showSaveAnswerGuide =
     Boolean(homeGuideKey) &&
-    onboardingGuideStep === "save" &&
+    (onboardingGuideStep === "save" || onboardingGuideStep === "save-wrong") &&
     showQuizAttempt &&
     Boolean(quizContext.selectedOption) &&
     !quizContext.saved;
+  const guidedWrongOptionId = useMemo(() => {
+    if (!showQuizAttempt || quizContext.currentIndex !== SECOND_GUIDED_QUESTION_INDEX) {
+      return null;
+    }
+
+    const preferredOption = currentQuestion.options.find(
+      (choice) =>
+        choice.id === SECOND_GUIDED_WRONG_OPTION_ID &&
+        choice.id !== currentQuestion.correctOption,
+    );
+
+    if (preferredOption) {
+      return preferredOption.id;
+    }
+
+    return (
+      currentQuestion.options.find((choice) => choice.id !== currentQuestion.correctOption)?.id ||
+      null
+    );
+  }, [
+    currentQuestion.correctOption,
+    currentQuestion.options,
+    quizContext.currentIndex,
+    showQuizAttempt,
+  ]);
+  const showGuidedAnswerGuide = showCorrectAnswerGuide || showWrongAnswerGuide;
+  const showWrongResultGuidePending =
+    Boolean(homeGuideKey) &&
+    onboardingGuideStep === "wrong-result" &&
+    showQuizAttempt &&
+    (quizContext.checking || (quizContext.saved && !quizContext.isCorrect));
+  const showWrongResultGuide =
+    showWrongResultGuidePending && quizContext.saved && !quizContext.isCorrect;
   const showProgressGuidePending =
     Boolean(homeGuideKey) &&
     onboardingGuideStep === "progress" &&
@@ -1159,12 +1200,29 @@ function AppShell() {
     (quizContext.checking || (quizContext.saved && quizContext.isCorrect));
   const showProgressBarGuide =
     showProgressGuidePending && quizContext.saved && quizContext.isCorrect;
+  const showFinalProgressBarCopy =
+    showProgressBarGuide &&
+    isFinalQuizQuestion &&
+    quizContext.correctCount < quizContext.total;
+  const showWrongProgressBarGuide =
+    Boolean(homeGuideKey) &&
+    onboardingGuideStep === "progress-wrong" &&
+    showQuizAttempt &&
+    quizContext.saved &&
+    !quizContext.isCorrect;
   const showExplanationGuide =
     Boolean(homeGuideKey) &&
     onboardingGuideStep === "explanation" &&
     showQuizAttempt &&
     quizContext.saved &&
     quizContext.isCorrect &&
+    !isExplanationOpen;
+  const showWrongExplanationGuide =
+    Boolean(homeGuideKey) &&
+    onboardingGuideStep === "explanation-wrong" &&
+    showQuizAttempt &&
+    quizContext.saved &&
+    !quizContext.isCorrect &&
     !isExplanationOpen;
   const showContinueGuide =
     Boolean(homeGuideKey) &&
@@ -1173,14 +1231,25 @@ function AppShell() {
     quizContext.saved &&
     quizContext.isCorrect &&
     isExplanationOpen;
+  const showWrongContinueGuide =
+    Boolean(homeGuideKey) &&
+    onboardingGuideStep === "continue-wrong" &&
+    showQuizAttempt &&
+    quizContext.saved &&
+    !quizContext.isCorrect &&
+    isExplanationOpen;
+  const showAnyExplanationGuide = showExplanationGuide || showWrongExplanationGuide;
+  const showAnyContinueGuide = showContinueGuide || showWrongContinueGuide;
   const showQuizAttemptGuide =
     showQuestionReadGuide ||
     showAnswerChoiceGuide ||
-    showCorrectAnswerGuide ||
+    showGuidedAnswerGuide ||
     showSaveAnswerGuide ||
+    showWrongResultGuidePending ||
     showProgressGuidePending ||
-    showExplanationGuide ||
-    showContinueGuide;
+    showWrongProgressBarGuide ||
+    showAnyExplanationGuide ||
+    showAnyContinueGuide;
   const showAppGuide =
     showHomeSubjectGuide ||
     showChapterSelectionGuide ||
@@ -1273,12 +1342,12 @@ function AppShell() {
   }, [showAnswerChoiceGuide]);
 
   useEffect(() => {
-    if (!showCorrectAnswerGuide || !answerGuideRef.current) {
+    if (!showGuidedAnswerGuide || !answerGuideRef.current) {
       return;
     }
 
     answerGuideRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [showCorrectAnswerGuide]);
+  }, [showGuidedAnswerGuide]);
 
   useEffect(() => {
     if (!showSaveAnswerGuide || !saveGuideRef.current) {
@@ -1289,28 +1358,28 @@ function AppShell() {
   }, [showSaveAnswerGuide]);
 
   useEffect(() => {
-    if (!showProgressBarGuide || !progressGuideRef.current) {
+    if ((!showProgressBarGuide && !showWrongProgressBarGuide) || !progressGuideRef.current) {
       return;
     }
 
     progressGuideRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [showProgressBarGuide]);
+  }, [showProgressBarGuide, showWrongProgressBarGuide]);
 
   useEffect(() => {
-    if (!showExplanationGuide || !explanationGuideRef.current) {
+    if (!showAnyExplanationGuide || !explanationGuideRef.current) {
       return;
     }
 
     explanationGuideRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [showExplanationGuide]);
+  }, [showAnyExplanationGuide]);
 
   useEffect(() => {
-    if (!showContinueGuide || !continueGuideRef.current) {
+    if (!showAnyContinueGuide || !continueGuideRef.current) {
       return;
     }
 
     continueGuideRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [showContinueGuide]);
+  }, [showAnyContinueGuide]);
 
   function selectSubject(subject) {
     if (showHomeSubjectGuide && subject !== "Mathematics") {
@@ -1482,12 +1551,14 @@ function AppShell() {
   }
 
   function saveAnswer() {
-    if (showQuestionReadGuide || showAnswerChoiceGuide || showCorrectAnswerGuide) {
+    if (showQuestionReadGuide || showAnswerChoiceGuide || showGuidedAnswerGuide) {
       return;
     }
 
     if (showSaveAnswerGuide) {
-      setOnboardingGuideStep("progress");
+      setOnboardingGuideStep(
+        onboardingGuideStep === "save" ? "progress" : "wrong-result",
+      );
     }
 
     actions.saveQuizAnswer();
@@ -1495,7 +1566,30 @@ function AppShell() {
 
   function nextQuestion() {
     if (showContinueGuide) {
-      setOnboardingGuideStep(null);
+      let nextGuideStep = null;
+
+      if (Boolean(homeGuideKey) && quizContext.currentIndex === 0) {
+        nextGuideStep = "question-wrong";
+      } else if (
+        Boolean(homeGuideKey) &&
+        quizContext.currentIndex >= THIRD_GUIDED_QUESTION_INDEX &&
+        quizContext.currentIndex < quizContext.total - 1
+      ) {
+        nextGuideStep = "answer-third";
+      }
+
+      setOnboardingGuideStep(nextGuideStep);
+      setOpenExplanationFor(null);
+      actions.nextQuizQuestion();
+      return;
+    }
+
+    if (showWrongContinueGuide) {
+      setOnboardingGuideStep(
+        Boolean(homeGuideKey) && quizContext.currentIndex === SECOND_GUIDED_QUESTION_INDEX
+          ? "answer-third"
+          : null,
+      );
       setOpenExplanationFor(null);
       actions.nextQuizQuestion();
       return;
@@ -1524,6 +1618,16 @@ function AppShell() {
       return;
     }
 
+    if (showWrongAnswerGuide) {
+      if (optionId !== guidedWrongOptionId) {
+        return;
+      }
+
+      actions.selectQuizOption(optionId);
+      setOnboardingGuideStep("save-wrong");
+      return;
+    }
+
     if (quizContext.eliminatedOptions.includes(optionId)) {
       return;
     }
@@ -1539,7 +1643,9 @@ function AppShell() {
   }
 
   function advanceToChoiceGuide() {
-    setOnboardingGuideStep("choices");
+    setOnboardingGuideStep(
+      onboardingGuideStep === "question-wrong" ? "answer-wrong" : "choices",
+    );
   }
 
   function advanceToAnswerGuide() {
@@ -1550,14 +1656,28 @@ function AppShell() {
     setOnboardingGuideStep("explanation");
   }
 
+  function advanceFromWrongResultGuide() {
+    setOnboardingGuideStep("progress-wrong");
+  }
+
+  function advanceFromWrongProgressGuide() {
+    setOnboardingGuideStep("explanation-wrong");
+  }
+
   function toggleExplanation() {
-    if (showProgressGuidePending || showContinueGuide) {
+    if (showWrongResultGuidePending || showProgressGuidePending || showWrongProgressBarGuide) {
       return;
     }
 
     if (showExplanationGuide) {
       setOpenExplanationFor(explanationKey);
       setOnboardingGuideStep("continue");
+      return;
+    }
+
+    if (showWrongExplanationGuide) {
+      setOpenExplanationFor(explanationKey);
+      setOnboardingGuideStep("continue-wrong");
       return;
     }
 
@@ -1691,21 +1811,21 @@ function AppShell() {
                     ? "is-question-guided"
                     : showAnswerChoiceGuide
                       ? "is-choice-guided"
-                      : showCorrectAnswerGuide
+                      : showGuidedAnswerGuide
                         ? "is-answer-guided"
                         : showSaveAnswerGuide
-                          ? "is-save-guided"
-                          : showProgressGuidePending
+                        ? "is-save-guided"
+                          : showProgressGuidePending || showWrongProgressBarGuide
                             ? "is-progress-guided"
-                            : showExplanationGuide
+                            : showAnyExplanationGuide
                               ? "is-explanation-guided"
-                              : showContinueGuide
+                              : showAnyContinueGuide
                                 ? "is-continue-guided"
                                 : ""
                 }`}
               >
                 <div
-                  ref={showProgressBarGuide ? progressGuideRef : null}
+                  ref={showProgressBarGuide || showWrongProgressBarGuide ? progressGuideRef : null}
                   className="pandai-attempt-top"
                 >
                   <div className="pandai-attempt-subject">
@@ -1782,7 +1902,7 @@ function AppShell() {
                         className="pandai-question-guide__mascot"
                       />
                       <div className="pandai-question-guide__bubble">
-                        <h3 id="pandai-question-guide-title">Here&apos;s the question 👇</h3>
+                        <h3 id="pandai-question-guide-title">Here's the question 👇</h3>
                         <p>Take a moment to read it 🧠</p>
                         <button
                           type="button"
@@ -1817,9 +1937,15 @@ function AppShell() {
                         </button>
                       </div>
                     </div>
-                  ) : showCorrectAnswerGuide ? (
+                  ) : showGuidedAnswerGuide ? (
                     <div
-                      className="pandai-question-guide pandai-question-guide--answer"
+                      className={`pandai-question-guide pandai-question-guide--answer ${
+                        showWrongAnswerGuide ? "pandai-question-guide--answer-wrong" : ""
+                      } ${
+                        onboardingGuideStep === "answer-third"
+                          ? "pandai-question-guide--answer-third"
+                          : ""
+                      }`}
                       role="dialog"
                       aria-labelledby="pandai-answer-guide-title"
                     >
@@ -1830,8 +1956,20 @@ function AppShell() {
                         className="pandai-question-guide__mascot"
                       />
                       <div className="pandai-question-guide__bubble">
-                        <h3 id="pandai-answer-guide-title">Try this answer 👇</h3>
-                        <p>We&apos;ll guide you along the way 🚀</p>
+                        <h3 id="pandai-answer-guide-title">
+                          {onboardingGuideStep === "answer-third"
+                            ? "This one looks right."
+                            : showWrongAnswerGuide
+                            ? "This might not be the answer 👀"
+                            : "Try this answer 👇"}
+                        </h3>
+                        {onboardingGuideStep === "answer-third" ? null : (
+                          <p>
+                            {showWrongAnswerGuide
+                              ? "Try it anyway 👇"
+                              : "We'll guide you along the way 🚀"}
+                          </p>
+                        )}
                       </div>
                     </div>
                   ) : null}
@@ -1878,6 +2016,8 @@ function AppShell() {
                         const isGuideAnswerFocus =
                           showCorrectAnswerGuide &&
                           choice.id === currentQuestion.correctOption;
+                        const isGuideWrongAnswerFocus =
+                          showWrongAnswerGuide && choice.id === guidedWrongOptionId;
                         const isGuideSaveFocus =
                           showSaveAnswerGuide &&
                           choice.id === quizContext.selectedOption;
@@ -1892,14 +2032,14 @@ function AppShell() {
                         return (
                           <button
                             key={choice.id}
-                            ref={isGuideAnswerFocus ? answerGuideRef : null}
+                            ref={isGuideAnswerFocus || isGuideWrongAnswerFocus ? answerGuideRef : null}
                             type="button"
                             className={`pandai-attempt-choice ${
                               isSelected ? "is-selected" : ""
                             } ${isEliminated ? "is-eliminated" : ""} ${
                               isCorrectChoice ? "is-correct" : ""
                             } ${isWrongChoice ? "is-wrong" : ""} ${
-                              isGuideAnswerFocus ? "is-guide-answer" : ""
+                              isGuideAnswerFocus || isGuideWrongAnswerFocus ? "is-guide-answer" : ""
                             } ${isGuideSaveFocus ? "is-guide-save-answer" : ""}`}
                             disabled={
                               showQuestionReadGuide ||
@@ -1907,6 +2047,7 @@ function AppShell() {
                               showSaveAnswerGuide ||
                               (showCorrectAnswerGuide &&
                                 choice.id !== currentQuestion.correctOption) ||
+                              (showWrongAnswerGuide && choice.id !== guidedWrongOptionId) ||
                               isEliminated ||
                               quizContext.checking ||
                               quizContext.saved
@@ -1937,18 +2078,23 @@ function AppShell() {
 
                       {quizContext.saved ? (
                         <div
-                          ref={showExplanationGuide || showContinueGuide ? explanationGuideRef : null}
+                          ref={showAnyExplanationGuide || showAnyContinueGuide ? explanationGuideRef : null}
                           className={`pandai-attempt-explanation ${
                             isExplanationOpen ? "is-open" : ""
-                          } ${showExplanationGuide ? "is-guide-focus" : ""} ${
-                            showContinueGuide ? "is-guide-open" : ""
+                          } ${showAnyExplanationGuide ? "is-guide-focus" : ""} ${
+                            showAnyContinueGuide ? "is-guide-open" : ""
                           }`}
                         >
                           <button
                             type="button"
                             className="pandai-attempt-explanation__toggle"
                             aria-expanded={isExplanationOpen}
-                            disabled={showProgressGuidePending || showContinueGuide}
+                            disabled={
+                              showWrongResultGuidePending ||
+                              showProgressGuidePending ||
+                              showWrongProgressBarGuide ||
+                              showAnyContinueGuide
+                            }
                             onClick={toggleExplanation}
                           >
                             <span>Explanation</span>
@@ -1978,12 +2124,12 @@ function AppShell() {
 
                   {quizContext.saved ? (
                     <button
-                      ref={showContinueGuide ? continueGuideRef : null}
+                      ref={showAnyContinueGuide ? continueGuideRef : null}
                       type="button"
                       className={`pandai-next-answer ${
-                        showContinueGuide ? "is-guide-focus" : ""
+                        showAnyContinueGuide ? "is-guide-focus" : ""
                       }`}
-                      disabled={showQuizAttemptGuide && !showContinueGuide}
+                      disabled={showQuizAttemptGuide && !showAnyContinueGuide}
                       onClick={nextQuestion}
                     >
                       Next
@@ -1998,7 +2144,7 @@ function AppShell() {
                       disabled={
                         showQuestionReadGuide ||
                         showAnswerChoiceGuide ||
-                        showCorrectAnswerGuide ||
+                        showGuidedAnswerGuide ||
                         !quizContext.selectedOption ||
                         quizContext.checking ||
                         quizContext.saved
@@ -2036,6 +2182,33 @@ function AppShell() {
                     </div>
                   </div>
                 ) : null}
+                {showWrongResultGuide ? (
+                  <div
+                    className="pandai-question-guide pandai-question-guide--wrong-result"
+                    role="dialog"
+                    aria-labelledby="pandai-wrong-result-guide-title"
+                  >
+                    <img
+                      src={pbotMascot}
+                      alt=""
+                      aria-hidden="true"
+                      className="pandai-question-guide__mascot"
+                    />
+                    <div className="pandai-question-guide__bubble">
+                      <h3 id="pandai-wrong-result-guide-title">
+                        That wasn't the correct answer 👀
+                      </h3>
+                      <p>We chose it on purpose to see what happens next 👇</p>
+                      <button
+                        type="button"
+                        className="pandai-question-guide__next"
+                        onClick={advanceFromWrongResultGuide}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
                 {showProgressBarGuide ? (
                   <div
                     className="pandai-question-guide pandai-question-guide--progress"
@@ -2050,9 +2223,15 @@ function AppShell() {
                     />
                     <div className="pandai-question-guide__bubble">
                       <h3 id="pandai-progress-guide-title">
-                        Nice! Your progress is here 📈
+                        {showFinalProgressBarCopy
+                          ? "Nice job - that's correct! 🎉"
+                          : "Nice! Your progress is here 📈"}
                       </h3>
-                      <p>It grows as you answer correctly ✨</p>
+                      <p>
+                        {showFinalProgressBarCopy
+                          ? "Take a look at the progress bar - it's not full yet because of an earlier mistake 👇"
+                          : "It grows as you answer correctly ✨"}
+                      </p>
                       <button
                         type="button"
                         className="pandai-question-guide__next"
@@ -2063,7 +2242,32 @@ function AppShell() {
                     </div>
                   </div>
                 ) : null}
-                {showExplanationGuide ? (
+                {showWrongProgressBarGuide ? (
+                  <div
+                    className="pandai-question-guide pandai-question-guide--progress"
+                    role="dialog"
+                    aria-labelledby="pandai-wrong-progress-guide-title"
+                  >
+                    <img
+                      src={pbotMascot}
+                      alt=""
+                      aria-hidden="true"
+                      className="pandai-question-guide__mascot"
+                    />
+                    <div className="pandai-question-guide__bubble">
+                      <h3 id="pandai-wrong-progress-guide-title">See this bar</h3>
+                      <p>It didn't go up just now because the answer was wrong ✨</p>
+                      <button
+                        type="button"
+                        className="pandai-question-guide__next"
+                        onClick={advanceFromWrongProgressGuide}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+                {showAnyExplanationGuide ? (
                   <div
                     className="pandai-question-guide pandai-question-guide--explanation"
                     role="dialog"
@@ -2076,12 +2280,20 @@ function AppShell() {
                       className="pandai-question-guide__mascot"
                     />
                     <div className="pandai-question-guide__bubble">
-                      <h3 id="pandai-explanation-guide-title">Learn more here 📘</h3>
-                      <p>Tap to read the explanation 😊</p>
+                      <h3 id="pandai-explanation-guide-title">
+                        {showWrongExplanationGuide
+                          ? "Let's check the explanation"
+                          : "Learn more here 📘"}
+                      </h3>
+                      <p>
+                        {showWrongExplanationGuide
+                          ? "to see what went wrong"
+                          : "Tap to read the explanation 😊"}
+                      </p>
                     </div>
                   </div>
                 ) : null}
-                {showContinueGuide ? (
+                {showAnyContinueGuide ? (
                   <div
                     className="pandai-question-guide pandai-question-guide--continue"
                     role="dialog"
@@ -2094,7 +2306,7 @@ function AppShell() {
                       className="pandai-question-guide__mascot"
                     />
                     <div className="pandai-question-guide__bubble">
-                      <h3 id="pandai-continue-guide-title">When you&apos;re ready 👉</h3>
+                      <h3 id="pandai-continue-guide-title">When you're ready 👉</h3>
                       <p>Tap Next to continue 🚀</p>
                     </div>
                   </div>

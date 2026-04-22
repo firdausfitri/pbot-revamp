@@ -126,8 +126,12 @@ function clampQuizTotal(total) {
   return Math.max(1, Math.min(QUIZ_QUESTION_BANK.length, parsed));
 }
 
+function clampQuizIndex(index, total = QUIZ_QUESTION_BANK.length) {
+  return Math.max(0, Math.min(Math.max(total - 1, 0), Number(index) || 0));
+}
+
 function getQuestionByIndex(index) {
-  const safeIndex = Math.max(0, Number(index) || 0) % QUIZ_QUESTION_BANK.length;
+  const safeIndex = clampQuizIndex(index, QUIZ_QUESTION_BANK.length);
   return QUIZ_QUESTION_BANK[safeIndex];
 }
 
@@ -138,6 +142,9 @@ function createQuizContext() {
     total: 5,
     answeredCount: 0,
     correctCount: 0,
+    responses: [],
+    isReviewingFinalSet: false,
+    reviewIndex: 0,
     selectedOption: null,
     saved: false,
     isCorrect: null,
@@ -217,9 +224,7 @@ function reducer(state, action) {
           mode: getModeFromRoute(route),
           learnView: route === "learn" ? state.pageContext.learnView : null,
         },
-        quizContext: shouldStopQuiz
-          ? { ...resetQuestionState(state.quizContext), inProgress: false }
-          : state.quizContext,
+        quizContext: shouldStopQuiz ? createQuizContext() : state.quizContext,
       };
     }
     case "open_learn_view": {
@@ -244,7 +249,7 @@ function reducer(state, action) {
           selectedSubject: nextSubject,
           selectedTopic: nextTopic,
         },
-        quizContext: { ...resetQuestionState(state.quizContext), inProgress: false },
+        quizContext: createQuizContext(),
       };
     }
     case "close_learn_view": {
@@ -256,7 +261,7 @@ function reducer(state, action) {
           mode: getModeFromRoute("home"),
           learnView: null,
         },
-        quizContext: { ...resetQuestionState(state.quizContext), inProgress: false },
+        quizContext: createQuizContext(),
       };
     }
     case "set_selected_subject": {
@@ -275,9 +280,7 @@ function reducer(state, action) {
           ...state.sessionContext,
           lastSubject: subject || state.sessionContext.lastSubject,
         },
-        quizContext: shouldStopQuiz
-          ? { ...resetQuestionState(state.quizContext), inProgress: false }
-          : state.quizContext,
+        quizContext: shouldStopQuiz ? createQuizContext() : state.quizContext,
       };
     }
     case "set_selected_topic": {
@@ -301,7 +304,7 @@ function reducer(state, action) {
           ...state.pageContext,
           selectedTopic: null,
         },
-        quizContext: { ...resetQuestionState(state.quizContext), inProgress: false },
+        quizContext: createQuizContext(),
       };
     }
     case "set_last_activity": {
@@ -354,11 +357,15 @@ function reducer(state, action) {
     case "stop_quiz": {
       return {
         ...state,
-        quizContext: { ...resetQuestionState(state.quizContext), inProgress: false },
+        quizContext: createQuizContext(),
       };
     }
     case "select_quiz_option": {
-      if (!state.quizContext.inProgress || state.quizContext.checking) {
+      if (
+        !state.quizContext.inProgress ||
+        state.quizContext.checking ||
+        state.quizContext.isReviewingFinalSet
+      ) {
         return state;
       }
 
@@ -387,16 +394,30 @@ function reducer(state, action) {
         return state;
       }
 
+      const total = clampQuizTotal(state.quizContext.total);
+      const questionIndex = clampQuizIndex(state.quizContext.currentIndex, total);
+      const isCorrect = Boolean(action.isCorrect);
+      const nextResponses = state.quizContext.responses.slice();
+      nextResponses[questionIndex] = {
+        questionIndex,
+        selectedOption: state.quizContext.selectedOption,
+        isCorrect,
+        saved: true,
+      };
+      const isFinalQuestion = questionIndex >= total - 1;
+
       return {
         ...state,
         quizContext: {
           ...state.quizContext,
           answeredCount: state.quizContext.answeredCount + 1,
-          correctCount:
-            state.quizContext.correctCount + (action.isCorrect ? 1 : 0),
+          correctCount: state.quizContext.correctCount + (isCorrect ? 1 : 0),
+          responses: nextResponses,
+          isReviewingFinalSet: isFinalQuestion,
+          reviewIndex: isFinalQuestion ? questionIndex : state.quizContext.reviewIndex,
           checking: false,
           saved: true,
-          isCorrect: Boolean(action.isCorrect),
+          isCorrect,
         },
       };
     }
@@ -405,8 +426,28 @@ function reducer(state, action) {
         return state;
       }
 
-      const nextIndex =
-        (state.quizContext.currentIndex + 1) % clampQuizTotal(state.quizContext.total);
+      const total = clampQuizTotal(state.quizContext.total);
+
+      if (state.quizContext.isReviewingFinalSet) {
+        const nextReviewIndex = Math.min(
+          clampQuizIndex(state.quizContext.reviewIndex, total) + 1,
+          total - 1,
+        );
+
+        return {
+          ...state,
+          quizContext: {
+            ...state.quizContext,
+            reviewIndex: nextReviewIndex,
+          },
+        };
+      }
+
+      const nextIndex = clampQuizIndex(state.quizContext.currentIndex, total) + 1;
+      if (nextIndex >= total) {
+        return state;
+      }
+
       return {
         ...state,
         quizContext: {
@@ -416,7 +457,7 @@ function reducer(state, action) {
       };
     }
     case "retry_quiz_question": {
-      if (!state.quizContext.inProgress) {
+      if (!state.quizContext.inProgress || state.quizContext.isReviewingFinalSet) {
         return state;
       }
 
@@ -426,7 +467,7 @@ function reducer(state, action) {
       };
     }
     case "set_quiz_hint_visible": {
-      if (!state.quizContext.inProgress) {
+      if (!state.quizContext.inProgress || state.quizContext.isReviewingFinalSet) {
         return state;
       }
 
@@ -439,7 +480,7 @@ function reducer(state, action) {
       };
     }
     case "set_quiz_eliminated_options": {
-      if (!state.quizContext.inProgress) {
+      if (!state.quizContext.inProgress || state.quizContext.isReviewingFinalSet) {
         return state;
       }
 
@@ -449,6 +490,38 @@ function reducer(state, action) {
           ...state.quizContext,
           eliminatedOptions: action.options || [],
         },
+      };
+    }
+    case "previous_review_question": {
+      if (!state.quizContext.inProgress || !state.quizContext.isReviewingFinalSet) {
+        return state;
+      }
+
+      return {
+        ...state,
+        quizContext: {
+          ...state.quizContext,
+          reviewIndex: Math.max(
+            clampQuizIndex(state.quizContext.reviewIndex, clampQuizTotal(state.quizContext.total)) -
+              1,
+            0,
+          ),
+        },
+      };
+    }
+    case "submit_quiz_set": {
+      if (!state.quizContext.inProgress) {
+        return state;
+      }
+
+      return {
+        ...state,
+        pageContext: {
+          ...state.pageContext,
+          route: "practice",
+          mode: getModeFromRoute("practice"),
+        },
+        quizContext: createQuizContext(),
       };
     }
     case "set_topic_picker_highlight": {
@@ -517,6 +590,10 @@ function getQuizSubState(quizContext) {
     return null;
   }
 
+  if (quizContext.isReviewingFinalSet) {
+    return "reviewing_final";
+  }
+
   if (quizContext.checking) {
     return "checking";
   }
@@ -539,12 +616,44 @@ export function PBotContextProvider({ children, profile }) {
     const pbotState = getPBotState(state);
     const contextStage = getContextStage(state.pageContext, pbotState);
     const isMathSelected = state.pageContext.selectedSubject === "Mathematics";
-    const currentQuestion = getQuestionByIndex(state.quizContext.currentIndex);
+    const total = clampQuizTotal(state.quizContext.total);
+    const currentIndex = clampQuizIndex(state.quizContext.currentIndex, total);
+    const reviewIndex = state.quizContext.isReviewingFinalSet
+      ? clampQuizIndex(state.quizContext.reviewIndex, total)
+      : currentIndex;
+    const displayIndex = state.quizContext.isReviewingFinalSet ? reviewIndex : currentIndex;
+    const currentQuestion = getQuestionByIndex(displayIndex);
+    const currentResponse = state.quizContext.responses[displayIndex] || null;
+    const selectedOption = state.quizContext.isReviewingFinalSet
+      ? currentResponse?.selectedOption || null
+      : state.quizContext.selectedOption;
+    const saved = state.quizContext.isReviewingFinalSet
+      ? Boolean(currentResponse?.saved)
+      : state.quizContext.saved;
+    const isCorrect = state.quizContext.isReviewingFinalSet
+      ? currentResponse?.isCorrect ?? null
+      : state.quizContext.isCorrect;
     const quizContext = {
       ...state.quizContext,
-      total: clampQuizTotal(state.quizContext.total),
+      currentIndex,
+      reviewIndex,
+      displayIndex,
+      total,
       currentQuestion,
-      subState: getQuizSubState(state.quizContext),
+      currentResponse,
+      selectedOption,
+      saved,
+      isCorrect,
+      showHint: state.quizContext.isReviewingFinalSet ? false : state.quizContext.showHint,
+      eliminatedOptions: state.quizContext.isReviewingFinalSet
+        ? []
+        : state.quizContext.eliminatedOptions,
+      subState: getQuizSubState({
+        ...state.quizContext,
+        selectedOption,
+        saved,
+        isCorrect,
+      }),
     };
 
     return {
@@ -587,6 +696,7 @@ export function PBotContextProvider({ children, profile }) {
         saveQuizAnswer: () => {
           if (
             !state.quizContext.inProgress ||
+            state.quizContext.isReviewingFinalSet ||
             state.quizContext.checking ||
             state.quizContext.saved ||
             !state.quizContext.selectedOption
@@ -602,7 +712,9 @@ export function PBotContextProvider({ children, profile }) {
           }, 420);
         },
         nextQuizQuestion: () => dispatch({ type: "next_quiz_question" }),
+        previousReviewQuestion: () => dispatch({ type: "previous_review_question" }),
         retryQuizQuestion: () => dispatch({ type: "retry_quiz_question" }),
+        submitQuizSet: () => dispatch({ type: "submit_quiz_set" }),
         toggleQuizHint: () =>
           dispatch({
             type: "set_quiz_hint_visible",

@@ -39,6 +39,12 @@ export function detectCoachTextIntent(input) {
   if (/save answer|save|simpan jawapan|simpan/.test(text)) {
     return "save_answer";
   }
+  if (/submit answer|submit|hantar jawapan|hantar/.test(text)) {
+    return "submit_quiz_set";
+  }
+  if (/previous|sebelumnya|undur|soalan sebelum/.test(text)) {
+    return "previous_review_question";
+  }
   if (/next|seterusnya|soalan seterusnya/.test(text)) {
     return "next_question";
   }
@@ -100,6 +106,17 @@ function buildQuizReply(text, quizContext) {
 
   if (/buku|textbook/.test(text)) {
     return "Baik, saya buka rujukan buku teks untuk topik ini.";
+  }
+
+  if (quizContext.subState === "reviewing_final") {
+    const questionNumber = (quizContext.displayIndex ?? quizContext.currentIndex) + 1;
+    if (/submit|hantar/.test(text)) {
+      return "Bila sudah siap semak, tekan Submit Answer untuk tamatkan set ini.";
+    }
+
+    return questionNumber === quizContext.total
+      ? "Ini soalan terakhir dalam mode review. Anda boleh semak soalan sebelumnya atau terus Submit Answer."
+      : `Anda sedang review soalan ${questionNumber}/${quizContext.total}. Mode ini read-only.`;
   }
 
   if (/hint|petunjuk/.test(text) && quizContext.currentQuestion?.hint) {

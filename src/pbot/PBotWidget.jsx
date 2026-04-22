@@ -24,6 +24,17 @@ const TAB = {
   NEXT: "next",
 };
 
+const MALAY_ORDINALS = ["pertama", "kedua", "ketiga", "keempat", "kelima"];
+
+function getMalayOrdinalQuestionLabel(questionNumber, total) {
+  if (questionNumber >= total) {
+    return "soalan terakhir";
+  }
+
+  const ordinal = MALAY_ORDINALS[questionNumber - 1];
+  return ordinal ? `soalan ${ordinal}` : `soalan ke-${questionNumber}`;
+}
+
 export default function PBotWidget() {
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(TAB.COACH);
@@ -35,6 +46,7 @@ export default function PBotWidget() {
   const pulseTimerRef = useRef(null);
   const prevInProgressRef = useRef(false);
   const wrongNudgedForQuestionRef = useRef(null);
+  const finalReviewNudgedForQuestionRef = useRef(null);
   const deepDiveRequestRef = useRef(0);
   const nudgeMetaRef = useRef({
     lastShownAt: 0,
@@ -167,7 +179,7 @@ export default function PBotWidget() {
   }, []);
 
   const canShowNudge = useCallback(
-    ({ questionScoped = true } = {}) => {
+    ({ questionScoped = true, respectCooldown = true } = {}) => {
       if (open) {
         return false;
       }
@@ -178,7 +190,7 @@ export default function PBotWidget() {
       if (now < meta.muteUntil) {
         return false;
       }
-      if (now - meta.lastShownAt < 45_000) {
+      if (respectCooldown && now - meta.lastShownAt < 45_000) {
         return false;
       }
       if (
@@ -195,8 +207,8 @@ export default function PBotWidget() {
   );
 
   const showNudge = useCallback(
-    (message, { questionScoped = true } = {}) => {
-      if (!canShowNudge({ questionScoped })) {
+    (message, { questionScoped = true, respectCooldown = true } = {}) => {
+      if (!canShowNudge({ questionScoped, respectCooldown })) {
         return false;
       }
 
@@ -245,26 +257,57 @@ export default function PBotWidget() {
     if (!quizContext.inProgress) {
       prevInProgressRef.current = false;
       wrongNudgedForQuestionRef.current = null;
+      finalReviewNudgedForQuestionRef.current = null;
+      nudgeMetaRef.current.questionNudged = null;
       return undefined;
-    }
-
-    if (!prevInProgressRef.current && !nudgeMetaRef.current.introShown) {
-      const timer = setTimeout(() => {
-        const shown = showNudge("Quiz dah mula. Perlu hint untuk soalan pertama?");
-        if (shown) {
-          nudgeMetaRef.current.introShown = true;
-        }
-      }, 0);
-      prevInProgressRef.current = true;
-      return () => clearTimeout(timer);
     }
 
     prevInProgressRef.current = true;
     return undefined;
-  }, [quizContext.inProgress, showNudge]);
+  }, [quizContext.inProgress]);
 
   useEffect(() => {
-    if (!(quizContext.inProgress && quizContext.subState === "awaiting_selection")) {
+    if (
+      !(
+        quizContext.inProgress &&
+        !quizContext.isReviewingFinalSet &&
+        quizContext.subState === "awaiting_selection"
+      )
+    ) {
+      return undefined;
+    }
+
+    const timer = setTimeout(() => {
+      const questionNumber = quizContext.currentIndex + 1;
+      const questionLabel = getMalayOrdinalQuestionLabel(
+        questionNumber,
+        quizContext.total,
+      );
+      const message =
+        questionNumber === quizContext.total
+          ? "Ini soalan terakhir."
+          : `Ini ${questionLabel}.`;
+      showNudge(message, { respectCooldown: false });
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [
+    quizContext.currentIndex,
+    quizContext.inProgress,
+    quizContext.isReviewingFinalSet,
+    quizContext.subState,
+    quizContext.total,
+    showNudge,
+  ]);
+
+  useEffect(() => {
+    if (
+      !(
+        quizContext.inProgress &&
+        !quizContext.isReviewingFinalSet &&
+        quizContext.subState === "awaiting_selection"
+      )
+    ) {
       return undefined;
     }
 
@@ -273,10 +316,23 @@ export default function PBotWidget() {
     }, 9000);
 
     return () => clearTimeout(idleTimer);
-  }, [quizContext.inProgress, quizContext.subState, quizContext.currentIndex, showNudge]);
+  }, [
+    quizContext.currentIndex,
+    quizContext.inProgress,
+    quizContext.isReviewingFinalSet,
+    quizContext.subState,
+    showNudge,
+  ]);
 
   useEffect(() => {
-    if (!(quizContext.inProgress && quizContext.saved && quizContext.isCorrect === false)) {
+    if (
+      !(
+        quizContext.inProgress &&
+        !quizContext.isReviewingFinalSet &&
+        quizContext.saved &&
+        quizContext.isCorrect === false
+      )
+    ) {
       return undefined;
     }
 
@@ -287,6 +343,7 @@ export default function PBotWidget() {
     const timer = setTimeout(() => {
       const shown = showNudge(
         "Jawapan salah direkod. Semak explanation, kemudian tekan Next.",
+        { questionScoped: false, respectCooldown: false },
       );
       if (shown) {
         wrongNudgedForQuestionRef.current = quizContext.currentIndex;
@@ -296,9 +353,45 @@ export default function PBotWidget() {
     return () => clearTimeout(timer);
   }, [
     quizContext.inProgress,
+    quizContext.isReviewingFinalSet,
     quizContext.saved,
     quizContext.isCorrect,
     quizContext.currentIndex,
+    showNudge,
+  ]);
+
+  useEffect(() => {
+    if (
+      !(
+        quizContext.inProgress &&
+        quizContext.isReviewingFinalSet &&
+        quizContext.displayIndex === quizContext.total - 1
+      )
+    ) {
+      return undefined;
+    }
+
+    if (finalReviewNudgedForQuestionRef.current === quizContext.currentIndex) {
+      return undefined;
+    }
+
+    const timer = setTimeout(() => {
+      const shown = showNudge(
+        "Soalan terakhir siap disemak. Anda boleh review soalan sebelumnya atau Submit Answer bila ready.",
+        { questionScoped: false, respectCooldown: false },
+      );
+      if (shown) {
+        finalReviewNudgedForQuestionRef.current = quizContext.currentIndex;
+      }
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [
+    quizContext.currentIndex,
+    quizContext.displayIndex,
+    quizContext.inProgress,
+    quizContext.isReviewingFinalSet,
+    quizContext.total,
     showNudge,
   ]);
 
@@ -520,8 +613,16 @@ export default function PBotWidget() {
         actions.saveQuizAnswer();
         return;
       }
+      case "previous_review_question": {
+        actions.previousReviewQuestion();
+        return;
+      }
       case "next_question": {
         actions.nextQuizQuestion();
+        return;
+      }
+      case "submit_quiz_set": {
+        actions.submitQuizSet();
         return;
       }
       case "harder": {

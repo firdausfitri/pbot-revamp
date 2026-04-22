@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import PBotWidget from "./pbot/PBotWidget";
 import { PBotContextProvider, usePBotContext } from "./pbot/context/PBotContext";
 import pbotMascot from "./pbot/assets/pbot-mascot.svg";
 import { LEARN_MENU_ITEMS } from "./learnMenuItems";
@@ -32,6 +31,35 @@ const QUIZ_STAR_THRESHOLDS = [33.33, 66.67, 100];
 const SECOND_GUIDED_QUESTION_INDEX = 1;
 const SECOND_GUIDED_WRONG_OPTION_ID = "C";
 const THIRD_GUIDED_QUESTION_INDEX = 2;
+const ENGLISH_ORDINALS = ["first", "second", "third", "fourth", "fifth"];
+
+function getEnglishOrdinalQuestionLabel(questionNumber, total) {
+  if (questionNumber >= total) {
+    return "last question";
+  }
+
+  return `${ENGLISH_ORDINALS[questionNumber - 1] || `${questionNumber}th`} question`;
+}
+
+function capitalizeLabel(value) {
+  if (!value) {
+    return "";
+  }
+
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function formatSubmissionDate(dateValue) {
+  if (!dateValue) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(dateValue));
+}
 
 const SUBJECT_CARDS = [
   {
@@ -220,6 +248,30 @@ const MATH_CHAPTERS = [
     topic: "Functions",
   },
 ];
+
+const MATH_TOPIC_SEQUENCE = Array.from(
+  new Set(
+    MATH_CHAPTERS.flatMap((chapter) => [
+      ...(Array.isArray(chapter.topics)
+        ? chapter.topics.map((topicItem) => topicItem.topic).filter(Boolean)
+        : []),
+      ...(chapter.topic ? [chapter.topic] : []),
+    ]),
+  ),
+);
+
+function getNextMathTopic(currentTopic) {
+  if (!currentTopic) {
+    return MATH_TOPIC_SEQUENCE[0] || null;
+  }
+
+  const currentTopicIndex = MATH_TOPIC_SEQUENCE.indexOf(currentTopic);
+  if (currentTopicIndex === -1 || currentTopicIndex >= MATH_TOPIC_SEQUENCE.length - 1) {
+    return null;
+  }
+
+  return MATH_TOPIC_SEQUENCE[currentTopicIndex + 1];
+}
 
 const FIRST_GUIDED_CHAPTER_ID = "chapter-functions";
 
@@ -1093,30 +1145,93 @@ function AppShell() {
   const [learnMenuOpen, setLearnMenuOpen] = useState(false);
   const [expandedChapterId, setExpandedChapterId] = useState(null);
   const [openExplanationFor, setOpenExplanationFor] = useState(null);
+  const [quizCompletionModal, setQuizCompletionModal] = useState(null);
   const [onboardingGuideStep, setOnboardingGuideStep] = useState(() =>
     homeGuideKey ? "subject" : null,
   );
+  const resolvedAnalysisSubjectId =
+    pageContext.route === "practice" &&
+    pageContext.selectedSubject === "Mathematics" &&
+    !quizContext.inProgress
+      ? "kssm-math"
+      : analysisSubjectId;
   const hasSelectedSubject = Boolean(pageContext.selectedSubject);
   const showQuizWorkspace = pageContext.route === "quiz" && hasSelectedSubject;
   const isMathSelected = pageContext.selectedSubject === "Mathematics";
   const showQuizAttempt = showQuizWorkspace && isMathSelected && quizContext.inProgress;
   const analysisData = useMemo(
-    () => SUBJECT_ANALYSIS_BY_ID[analysisSubjectId] || SUBJECT_ANALYSIS_BY_ID["kssm-am"],
-    [analysisSubjectId],
+    () => SUBJECT_ANALYSIS_BY_ID[resolvedAnalysisSubjectId] || SUBJECT_ANALYSIS_BY_ID["kssm-am"],
+    [resolvedAnalysisSubjectId],
   );
   const showAchievementView = pageContext.route === "achievement";
   const showLearnView = pageContext.route === "learn";
   const showPracticeAnalysisView = pageContext.route === "practice" && Boolean(analysisData);
   const currentQuestion = quizContext.currentQuestion;
-  const questionNumber = Math.min(quizContext.currentIndex + 1, quizContext.total);
+  const displayQuestionIndex = quizContext.displayIndex ?? quizContext.currentIndex;
+  const questionNumber = Math.min(displayQuestionIndex + 1, quizContext.total);
   const questionProgress = `${questionNumber} / ${quizContext.total}`;
   const progressTrackPercent =
     (quizContext.correctCount / Math.max(quizContext.total, 1)) * 100;
+  const scorePercent = Math.round(progressTrackPercent);
+  const incorrectCount = Math.max(quizContext.total - quizContext.correctCount, 0);
   const starCount = QUIZ_STAR_THRESHOLDS.filter(
     (threshold) => progressTrackPercent >= threshold,
   ).length;
   const isFinalQuizQuestion = quizContext.currentIndex === Math.max(quizContext.total - 1, 0);
-  const explanationKey = `${quizContext.currentIndex}:${quizContext.saved ? "saved" : "pending"}`;
+  const isFinalReviewMode = quizContext.isReviewingFinalSet;
+  const isReviewingFinalQuestion = displayQuestionIndex === Math.max(quizContext.total - 1, 0);
+  const showReviewPrevious =
+    quizContext.saved && isFinalReviewMode && displayQuestionIndex > 0;
+  const showSubmitAnswer =
+    quizContext.saved && isFinalReviewMode && isReviewingFinalQuestion;
+  const activeQuizCompletionKey = `${pageContext.selectedTopic || ""}:${quizContext.total}:${
+    quizContext.answeredCount
+  }:${quizContext.correctCount}:${quizContext.currentIndex}:${
+    quizContext.isReviewingFinalSet ? "review" : "active"
+  }`;
+  const showQuizCompletionModal =
+    Boolean(quizCompletionModal) &&
+    showQuizAttempt &&
+    quizCompletionModal.quizKey === activeQuizCompletionKey;
+  const submittedOnLabel = useMemo(
+    () => formatSubmissionDate(quizCompletionModal?.submittedAt),
+    [quizCompletionModal],
+  );
+  const nextTopic = getNextMathTopic(pageContext.selectedTopic);
+  const completionHeading =
+    scorePercent >= 100 ? "Excellent!" : scorePercent >= 70 ? "Sufficient!" : "Keep going!";
+  const completionMessage =
+    scorePercent >= 100
+      ? "Perfect score. You are ready to move on."
+      : scorePercent >= 70
+        ? "Hasil yang cemerlang! Just one more star to conquer this topic."
+        : "Good effort. Practise another set to strengthen this topic.";
+  const completionCoinReward = starCount > 0 ? 1 : 0;
+  const completionHeartDelta = incorrectCount > 0 ? -1 : 0;
+  const completionCoachTitle =
+    scorePercent >= 100 ? "Amazing work! 🎉" : scorePercent >= 70 ? "Nice work! 🎉" : "Good try! 💪";
+  const completionCoachSummary = `${quizContext.correctCount} right, ${incorrectCount} wrong${
+    scorePercent >= 70 ? ". Good progress!" : "."
+  }`;
+  const completionCoachRewardLine =
+    completionHeartDelta < 0
+      ? `+${quizContext.correctCount} points • +${completionCoinReward} ${
+          completionCoinReward === 1 ? "coin" : "coins"
+        } • -${Math.abs(completionHeartDelta)} ${
+          Math.abs(completionHeartDelta) === 1 ? "life" : "lives"
+        }`
+      : `+${quizContext.correctCount} points • +${completionCoinReward} ${
+          completionCoinReward === 1 ? "coin" : "coins"
+        }`;
+  const completionCoachPrompt = "Tap Practise new set 👉";
+  const ordinalQuestionLabel = getEnglishOrdinalQuestionLabel(
+    questionNumber,
+    quizContext.total,
+  );
+  const ordinalQuestionTitle = capitalizeLabel(ordinalQuestionLabel);
+  const explanationKey = `${displayQuestionIndex}:${quizContext.saved ? "saved" : "pending"}:${
+    quizContext.isReviewingFinalSet ? "review" : "active"
+  }`;
   const isExplanationOpen = openExplanationFor === explanationKey;
   const learnerName = getLearnerDisplayName(userContext.name);
   const learnerInitial = getLearnerInitial(userContext.name);
@@ -1240,7 +1355,8 @@ function AppShell() {
     isExplanationOpen;
   const showAnyExplanationGuide = showExplanationGuide || showWrongExplanationGuide;
   const showAnyContinueGuide = showContinueGuide || showWrongContinueGuide;
-  const showQuizAttemptGuide =
+  const showLockedContinueGuide = showAnyContinueGuide && !showSubmitAnswer;
+  const hasBlockingQuizAttemptGuide =
     showQuestionReadGuide ||
     showAnswerChoiceGuide ||
     showGuidedAnswerGuide ||
@@ -1249,7 +1365,12 @@ function AppShell() {
     showProgressGuidePending ||
     showWrongProgressBarGuide ||
     showAnyExplanationGuide ||
-    showAnyContinueGuide;
+    showLockedContinueGuide;
+  const showQuizAttemptGuide = hasBlockingQuizAttemptGuide;
+  const showFinalReviewCallout =
+    showSubmitAnswer && !hasBlockingQuizAttemptGuide && !showQuizCompletionModal;
+  const showVisibleContinueGuide =
+    (showAnyContinueGuide || showFinalReviewCallout) && !showQuizCompletionModal;
   const showAppGuide =
     showHomeSubjectGuide ||
     showChapterSelectionGuide ||
@@ -1374,12 +1495,12 @@ function AppShell() {
   }, [showAnyExplanationGuide]);
 
   useEffect(() => {
-    if (!showAnyContinueGuide || !continueGuideRef.current) {
+    if (!showVisibleContinueGuide || !continueGuideRef.current) {
       return;
     }
 
     continueGuideRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [showAnyContinueGuide]);
+  }, [showVisibleContinueGuide]);
 
   function selectSubject(subject) {
     if (showHomeSubjectGuide && subject !== "Mathematics") {
@@ -1564,7 +1685,52 @@ function AppShell() {
     actions.saveQuizAnswer();
   }
 
+  function submitQuizSet() {
+    if (showQuizAttemptGuide && !showAnyContinueGuide) {
+      return;
+    }
+
+    setOpenExplanationFor(null);
+    setOnboardingGuideStep(null);
+    setQuizCompletionModal({
+      submittedAt: new Date().toISOString(),
+      quizKey: activeQuizCompletionKey,
+    });
+  }
+
+  function closeQuizCompletionModal() {
+    setQuizCompletionModal(null);
+  }
+
+  function practiceNewSet() {
+    closeQuizCompletionModal();
+    startTopicQuiz(pageContext.selectedTopic || "Functions", quizContext.total);
+  }
+
+  function startNextTopicQuiz() {
+    if (!nextTopic) {
+      return;
+    }
+
+    closeQuizCompletionModal();
+    startTopicQuiz(nextTopic, quizContext.total);
+  }
+
+  function previousReviewQuestion() {
+    if (showQuizAttemptGuide || !quizContext.isReviewingFinalSet) {
+      return;
+    }
+
+    setOpenExplanationFor(null);
+    actions.previousReviewQuestion();
+  }
+
   function nextQuestion() {
+    if (showContinueGuide && showSubmitAnswer) {
+      submitQuizSet();
+      return;
+    }
+
     if (showContinueGuide) {
       let nextGuideStep = null;
 
@@ -1581,6 +1747,11 @@ function AppShell() {
       setOnboardingGuideStep(nextGuideStep);
       setOpenExplanationFor(null);
       actions.nextQuizQuestion();
+      return;
+    }
+
+    if (showWrongContinueGuide && showSubmitAnswer) {
+      submitQuizSet();
       return;
     }
 
@@ -1604,7 +1775,12 @@ function AppShell() {
   }
 
   function selectAnswer(optionId) {
-    if (showQuestionReadGuide || showAnswerChoiceGuide || showSaveAnswerGuide) {
+    if (
+      showQuestionReadGuide ||
+      showAnswerChoiceGuide ||
+      showSaveAnswerGuide ||
+      quizContext.isReviewingFinalSet
+    ) {
       return;
     }
 
@@ -1634,14 +1810,6 @@ function AppShell() {
     actions.selectQuizOption(optionId);
   }
 
-  function openPBotPanel() {
-    if (showQuizAttemptGuide) {
-      return;
-    }
-
-    window.dispatchEvent(new Event("pbot:open"));
-  }
-
   function advanceToChoiceGuide() {
     setOnboardingGuideStep(
       onboardingGuideStep === "question-wrong" ? "answer-wrong" : "choices",
@@ -1653,6 +1821,11 @@ function AppShell() {
   }
 
   function advanceFromProgressGuide() {
+    if (showSubmitAnswer) {
+      setOnboardingGuideStep(null);
+      return;
+    }
+
     setOnboardingGuideStep("explanation");
   }
 
@@ -1661,6 +1834,11 @@ function AppShell() {
   }
 
   function advanceFromWrongProgressGuide() {
+    if (showSubmitAnswer) {
+      setOnboardingGuideStep(null);
+      return;
+    }
+
     setOnboardingGuideStep("explanation-wrong");
   }
 
@@ -1819,7 +1997,7 @@ function AppShell() {
                             ? "is-progress-guided"
                             : showAnyExplanationGuide
                               ? "is-explanation-guided"
-                              : showAnyContinueGuide
+                              : showLockedContinueGuide
                                 ? "is-continue-guided"
                                 : ""
                 }`}
@@ -1876,16 +2054,6 @@ function AppShell() {
                       />
                     </div>
                   </div>
-
-                  <button
-                    type="button"
-                    className="pandai-ask-pbot-btn"
-                    disabled={showQuizAttemptGuide}
-                    onClick={openPBotPanel}
-                  >
-                    Ask PBot
-                    <img src={pbotMascot} alt="" aria-hidden="true" />
-                  </button>
                 </div>
 
                 <article className="pandai-attempt-card">
@@ -1902,8 +2070,14 @@ function AppShell() {
                         className="pandai-question-guide__mascot"
                       />
                       <div className="pandai-question-guide__bubble">
-                        <h3 id="pandai-question-guide-title">Here's the question 👇</h3>
-                        <p>Take a moment to read it 🧠</p>
+                        <h3 id="pandai-question-guide-title">
+                          {ordinalQuestionTitle} 👇
+                        </h3>
+                        <p>
+                          {isFinalQuizQuestion
+                            ? "Take a moment to read your last question 🧠"
+                            : "Take a moment to read it 🧠"}
+                        </p>
                         <button
                           type="button"
                           className="pandai-question-guide__next"
@@ -1926,8 +2100,14 @@ function AppShell() {
                         className="pandai-question-guide__mascot"
                       />
                       <div className="pandai-question-guide__bubble">
-                        <h3 id="pandai-choice-guide-title">Here are your answer choices 👇</h3>
-                        <p>You can pick one from here ✅</p>
+                        <h3 id="pandai-choice-guide-title">
+                          {ordinalQuestionTitle}: answer choices 👇
+                        </h3>
+                        <p>
+                          {isFinalQuizQuestion
+                            ? "Pick one here. This is your last question ✅"
+                            : "You can pick one from here ✅"}
+                        </p>
                         <button
                           type="button"
                           className="pandai-question-guide__next"
@@ -2045,6 +2225,7 @@ function AppShell() {
                               showQuestionReadGuide ||
                               showAnswerChoiceGuide ||
                               showSaveAnswerGuide ||
+                              quizContext.isReviewingFinalSet ||
                               (showCorrectAnswerGuide &&
                                 choice.id !== currentQuestion.correctOption) ||
                               (showWrongAnswerGuide && choice.id !== guidedWrongOptionId) ||
@@ -2078,11 +2259,15 @@ function AppShell() {
 
                       {quizContext.saved ? (
                         <div
-                          ref={showAnyExplanationGuide || showAnyContinueGuide ? explanationGuideRef : null}
+                          ref={
+                            showAnyExplanationGuide || showVisibleContinueGuide
+                              ? explanationGuideRef
+                              : null
+                          }
                           className={`pandai-attempt-explanation ${
                             isExplanationOpen ? "is-open" : ""
                           } ${showAnyExplanationGuide ? "is-guide-focus" : ""} ${
-                            showAnyContinueGuide ? "is-guide-open" : ""
+                            showVisibleContinueGuide ? "is-guide-open" : ""
                           }`}
                         >
                           <button
@@ -2123,17 +2308,44 @@ function AppShell() {
                   ) : null}
 
                   {quizContext.saved ? (
-                    <button
-                      ref={showAnyContinueGuide ? continueGuideRef : null}
-                      type="button"
-                      className={`pandai-next-answer ${
-                        showAnyContinueGuide ? "is-guide-focus" : ""
-                      }`}
-                      disabled={showQuizAttemptGuide && !showAnyContinueGuide}
-                      onClick={nextQuestion}
-                    >
-                      Next
-                    </button>
+                    <div className="pandai-attempt-footer__actions">
+                      {showReviewPrevious ? (
+                        <button
+                          type="button"
+                          className="pandai-previous-answer"
+                          disabled={showQuizAttemptGuide}
+                          onClick={previousReviewQuestion}
+                        >
+                          Previous
+                        </button>
+                      ) : null}
+
+                      {showSubmitAnswer ? (
+                        <button
+                          ref={showVisibleContinueGuide ? continueGuideRef : null}
+                          type="button"
+                          className={`pandai-submit-answer ${
+                            showAnyContinueGuide ? "is-guide-focus" : ""
+                          }`}
+                          disabled={showQuizCompletionModal || (showQuizAttemptGuide && !showAnyContinueGuide)}
+                          onClick={submitQuizSet}
+                        >
+                          Submit Answer
+                        </button>
+                      ) : (
+                        <button
+                          ref={showVisibleContinueGuide ? continueGuideRef : null}
+                          type="button"
+                          className={`pandai-next-answer ${
+                            showAnyContinueGuide ? "is-guide-focus" : ""
+                          }`}
+                          disabled={showQuizAttemptGuide && !showAnyContinueGuide}
+                          onClick={nextQuestion}
+                        >
+                          Next
+                        </button>
+                      )}
+                    </div>
                   ) : (
                     <button
                       ref={showSaveAnswerGuide ? saveGuideRef : null}
@@ -2224,13 +2436,13 @@ function AppShell() {
                     <div className="pandai-question-guide__bubble">
                       <h3 id="pandai-progress-guide-title">
                         {showFinalProgressBarCopy
-                          ? "Nice job - that's correct! 🎉"
-                          : "Nice! Your progress is here 📈"}
+                          ? "Nice job - your last question is correct! 🎉"
+                          : `Nice job - your ${ordinalQuestionLabel} is correct! 🎉`}
                       </h3>
                       <p>
                         {showFinalProgressBarCopy
-                          ? "Take a look at the progress bar - it's not full yet because of an earlier mistake 👇"
-                          : "It grows as you answer correctly ✨"}
+                          ? "This is your last question. The bar isn't full yet because of an earlier mistake 👇"
+                          : `You're now on your ${ordinalQuestionLabel}. It grows as you answer correctly ✨`}
                       </p>
                       <button
                         type="button"
@@ -2255,8 +2467,16 @@ function AppShell() {
                       className="pandai-question-guide__mascot"
                     />
                     <div className="pandai-question-guide__bubble">
-                      <h3 id="pandai-wrong-progress-guide-title">See this bar</h3>
-                      <p>It didn't go up just now because the answer was wrong ✨</p>
+                      <h3 id="pandai-wrong-progress-guide-title">
+                        {isFinalQuizQuestion
+                          ? "This is your last question"
+                          : `You're on your ${ordinalQuestionLabel}`}
+                      </h3>
+                      <p>
+                        {isFinalQuizQuestion
+                          ? "This is your last question, and the bar didn't go up because the answer was wrong ✨"
+                          : "The bar didn't go up just now because the answer was wrong ✨"}
+                      </p>
                       <button
                         type="button"
                         className="pandai-question-guide__next"
@@ -2282,8 +2502,8 @@ function AppShell() {
                     <div className="pandai-question-guide__bubble">
                       <h3 id="pandai-explanation-guide-title">
                         {showWrongExplanationGuide
-                          ? "Let's check the explanation"
-                          : "Learn more here 📘"}
+                          ? `Let's check your ${ordinalQuestionLabel}`
+                          : `${ordinalQuestionTitle}: learn more 📘`}
                       </h3>
                       <p>
                         {showWrongExplanationGuide
@@ -2293,9 +2513,13 @@ function AppShell() {
                     </div>
                   </div>
                 ) : null}
-                {showAnyContinueGuide ? (
+                {showVisibleContinueGuide ? (
                   <div
-                    className="pandai-question-guide pandai-question-guide--continue"
+                    className={`pandai-question-guide ${
+                      showSubmitAnswer
+                        ? "pandai-question-guide--final-review"
+                        : "pandai-question-guide--continue"
+                    }`}
                     role="dialog"
                     aria-labelledby="pandai-continue-guide-title"
                   >
@@ -2306,8 +2530,16 @@ function AppShell() {
                       className="pandai-question-guide__mascot"
                     />
                     <div className="pandai-question-guide__bubble">
-                      <h3 id="pandai-continue-guide-title">When you're ready 👉</h3>
-                      <p>Tap Next to continue 🚀</p>
+                      <h3 id="pandai-continue-guide-title">
+                        {showSubmitAnswer
+                          ? "Nice, that's correct! 🎉"
+                          : `Your ${ordinalQuestionLabel} is done 👉`}
+                      </h3>
+                      <p>
+                        {showSubmitAnswer
+                          ? "You can read the explanation, review previous questions, and Submit Answer when you're ready 👉"
+                          : "Tap Next to continue 🚀"}
+                      </p>
                     </div>
                   </div>
                 ) : null}
@@ -2683,8 +2915,116 @@ function AppShell() {
           <div className="muted">Made with love in Malaysia</div>
         </footer>
       </div>
+      {showQuizCompletionModal ? (
+        <div className="pandai-quiz-completion" role="presentation">
+          <div className="pandai-quiz-completion__scrim" aria-hidden="true" />
+          <div className="pandai-quiz-completion__stage">
+            <div
+              className="pandai-quiz-completion__coach"
+              role="note"
+              aria-labelledby="pandai-quiz-completion-coach-title"
+            >
+              <img
+                src={pbotMascot}
+                alt=""
+                aria-hidden="true"
+                className="pandai-question-guide__mascot pandai-quiz-completion__coach-mascot"
+              />
+              <div className="pandai-question-guide__bubble pandai-quiz-completion__coach-bubble">
+                <h3 id="pandai-quiz-completion-coach-title">{completionCoachTitle}</h3>
+                <p>{completionCoachSummary}</p>
+                <p className="pandai-quiz-completion__coach-rewards">{completionCoachRewardLine}</p>
+                <p className="pandai-quiz-completion__coach-prompt">{completionCoachPrompt}</p>
+              </div>
+            </div>
 
-      {showAppGuide ? null : <PBotWidget />}
+            <div
+              className="pandai-quiz-completion__dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="pandai-quiz-completion-title"
+            >
+              <button
+                type="button"
+                className="pandai-quiz-completion__close"
+                aria-label="Close quiz completion summary"
+                disabled
+              >
+                ×
+              </button>
+
+              <div className="pandai-quiz-completion__stars" aria-hidden="true">
+                {QUIZ_STAR_THRESHOLDS.map((threshold) => (
+                  <span
+                    key={threshold}
+                    className={`pandai-quiz-completion__star ${
+                      progressTrackPercent >= threshold ? "is-active" : ""
+                    }`}
+                  >
+                    ★
+                  </span>
+                ))}
+              </div>
+
+              <img
+                src={pbotMascot}
+                alt=""
+                aria-hidden="true"
+                className="pandai-quiz-completion__mascot"
+              />
+
+              <h2 id="pandai-quiz-completion-title">{completionHeading}</h2>
+              <p className="pandai-quiz-completion__message">{completionMessage}</p>
+
+              <div className="pandai-quiz-completion__stats" aria-label="Quiz summary">
+                <div className="pandai-quiz-completion__stat">
+                  <span className="pandai-quiz-completion__stat-icon" aria-hidden="true">
+                    🏅
+                  </span>
+                  <strong>+ {quizContext.correctCount}</strong>
+                </div>
+                <div className="pandai-quiz-completion__stat">
+                  <span className="pandai-quiz-completion__stat-icon" aria-hidden="true">
+                    🪙
+                  </span>
+                  <strong>+ {completionCoinReward}</strong>
+                </div>
+                <div className="pandai-quiz-completion__stat is-negative">
+                  <span className="pandai-quiz-completion__stat-icon" aria-hidden="true">
+                    ❤
+                  </span>
+                  <strong>{completionHeartDelta}</strong>
+                </div>
+              </div>
+
+              <div className="pandai-quiz-completion__actions">
+                <button
+                  type="button"
+                  className="pandai-quiz-completion__btn pandai-quiz-completion__btn--ghost"
+                  disabled
+                  onClick={startNextTopicQuiz}
+                >
+                  Next topic {nextTopic ? "🪙" : ""}
+                </button>
+                <button
+                  type="button"
+                  className="pandai-quiz-completion__btn pandai-quiz-completion__btn--solid is-guide-focus"
+                  autoFocus
+                  onClick={practiceNewSet}
+                >
+                  Practise new set
+                </button>
+              </div>
+
+              <p className="pandai-quiz-completion__note">
+                {submittedOnLabel
+                  ? `Submitted on ${submittedOnLabel} • ${quizContext.correctCount} correct • ${incorrectCount} incorrect • ${scorePercent}%`
+                  : `${quizContext.correctCount} correct • ${incorrectCount} incorrect • ${scorePercent}%`}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }

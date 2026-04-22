@@ -155,9 +155,43 @@ function buildDeepDiveSnapshot({ userContext, behaviourSignals, subjectDeepDive 
 }
 
 function buildQuizSnapshot({ userContext, quizContext }) {
-  const statusLine = `Quiz: ${quizContext.currentIndex + 1}/${quizContext.total} • ${getGoalLine(
-    userContext,
-  )}`;
+  const questionNumber = (quizContext.displayIndex ?? quizContext.currentIndex) + 1;
+  const statusLine = `Quiz: ${questionNumber}/${quizContext.total} • ${getGoalLine(userContext)}`;
+
+  if (quizContext.subState === "reviewing_final") {
+    const onFinalReviewQuestion = questionNumber === quizContext.total;
+    const reviewActions = [];
+
+    if (questionNumber > 1) {
+      reviewActions.push({
+        id: "review-previous-question",
+        label: "Previous",
+        intent: "previous_review_question",
+      });
+    }
+
+    reviewActions.push(
+      onFinalReviewQuestion
+        ? {
+            id: "review-submit-answer",
+            label: "Submit Answer",
+            intent: "submit_quiz_set",
+          }
+        : {
+            id: "review-next-question",
+            label: "Next",
+            intent: "next_question",
+          },
+    );
+
+    return {
+      statusLine: `Review: ${questionNumber}/${quizContext.total} • Read-only`,
+      message: onFinalReviewQuestion
+        ? "Ini soalan terakhir. Semak soalan sebelumnya atau Submit Answer bila anda bersedia."
+        : `Anda sedang review soalan ${questionNumber}/${quizContext.total}. Jawapan tidak boleh diubah.`,
+      quickActions: reviewActions,
+    };
+  }
 
   if (quizContext.subState === "checking") {
     return {
@@ -171,7 +205,9 @@ function buildQuizSnapshot({ userContext, quizContext }) {
     return {
       statusLine,
       message:
-        "Pilih jawapan dulu. Kalau ragu, tekan Hint.",
+        questionNumber === quizContext.total
+          ? "Soalan terakhir. Pilih jawapan dulu, kemudian kita semak sebelum submit."
+          : "Pilih jawapan dulu. Kalau ragu, tekan Hint.",
       quickActions: [
         {
           id: "hint-before-select",
@@ -195,7 +231,10 @@ function buildQuizSnapshot({ userContext, quizContext }) {
   if (quizContext.subState === "selected_not_saved") {
     return {
       statusLine,
-      message: `Ok, anda pilih ${quizContext.selectedOption}. Nak saya semak cepat sebelum Save?`,
+      message:
+        questionNumber === quizContext.total
+          ? `Ini soalan terakhir. Pilihan ${quizContext.selectedOption}. Tekan Save Answer untuk semak sebelum submit.`
+          : `Ok, anda pilih ${quizContext.selectedOption}. Nak saya semak cepat sebelum Save?`,
       quickActions: [
         {
           id: "semak-dulu",

@@ -788,6 +788,636 @@
   line-height: 1;
 }
 
+.pandai-menu__item.is-locked {
+  background: #f3f5f4;
+  color: #94a19c;
+  box-shadow: inset 0 0 0 1px #e2e7e3;
+}
+
+.pandai-menu__lock {
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.78;
+}
+
+.pandai-mission-page {
+  margin-top: 20px;
+}
+
+.pandai-mission-page__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(300px, 0.9fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.pandai-mission-page__main {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.pandai-mission-panel {
+  border: 1px solid #dce4de;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top right, rgba(203, 239, 220, 0.9), rgba(255, 255, 255, 0) 34%),
+    linear-gradient(180deg, #fbfdfb 0%, #f2f7f4 100%);
+  box-shadow: 0 24px 60px rgba(81, 112, 93, 0.08);
+}
+
+.pandai-mission-panel--journey {
+  padding: 28px;
+  overflow: hidden;
+}
+
+.pandai-mission-panel--sidebar {
+  position: sticky;
+  top: 16px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.pandai-mission-panel__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.pandai-mission-panel__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pandai-mission-panel__copy h1 {
+  margin: 0;
+  font-size: 42px;
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+  color: #294034;
+}
+
+.pandai-mission-panel__copy p {
+  margin: 0;
+  max-width: 720px;
+  color: #66776c;
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.pandai-mission-panel__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #5f8a72;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pandai-mission-panel__progress {
+  min-width: 240px;
+  padding: 18px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: inset 0 0 0 1px rgba(195, 220, 203, 0.8);
+}
+
+.pandai-mission-panel__progress-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  color: #61756a;
+  font-size: 14px;
+}
+
+.pandai-mission-panel__progress-top strong {
+  color: #2f4639;
+  font-size: 18px;
+  letter-spacing: -0.03em;
+}
+
+.pandai-mission-panel__progress-track {
+  margin-top: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #dfe8e1;
+  overflow: hidden;
+}
+
+.pandai-mission-panel__progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #57cb91 0%, #8bdfa0 100%);
+  box-shadow: 0 8px 20px rgba(87, 203, 145, 0.28);
+}
+
+.pandai-mission-route {
+  position: relative;
+  margin-top: 24px;
+  border-radius: 26px;
+  border: 1px solid rgba(205, 224, 211, 0.92);
+  background:
+    radial-gradient(circle at 10% 10%, rgba(205, 225, 255, 0.42), rgba(255, 255, 255, 0) 36%),
+    radial-gradient(circle at 90% 8%, rgba(210, 252, 222, 0.5), rgba(255, 255, 255, 0) 32%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(245, 250, 247, 0.98));
+  overflow: hidden;
+}
+
+.pandai-mission-route--desktop {
+  min-height: 720px;
+}
+
+.pandai-mission-route--mobile {
+  display: none;
+}
+
+.pandai-mission-route__path {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.pandai-mission-route__path path {
+  fill: none;
+  stroke: #c9d2cb;
+  stroke-width: 10px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 6px 10px rgba(139, 151, 143, 0.12));
+}
+
+.pandai-mission-node {
+  position: absolute;
+  top: var(--node-top);
+  left: var(--node-left);
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  transform: translate(-50%, -50%);
+}
+
+.pandai-mission-node.is-card-left {
+  flex-direction: row-reverse;
+  text-align: right;
+}
+
+.pandai-mission-node__marker {
+  width: 58px;
+  height: 58px;
+  flex: none;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  font-weight: 700;
+  box-shadow: 0 16px 28px rgba(76, 94, 83, 0.16);
+}
+
+.pandai-mission-node__card {
+  min-width: 170px;
+  padding: 14px 16px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow:
+    0 14px 28px rgba(62, 93, 73, 0.08),
+    inset 0 0 0 1px rgba(216, 228, 220, 0.88);
+}
+
+.pandai-mission-node__eyebrow {
+  display: block;
+  margin-bottom: 6px;
+  color: #6f8176;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pandai-mission-node__card strong {
+  display: block;
+  color: #1f3127;
+  font-size: 20px;
+  letter-spacing: -0.03em;
+}
+
+.pandai-mission-node.is-completed .pandai-mission-node__marker {
+  background: linear-gradient(160deg, #4bbc79, #82db88);
+  color: #ffffff;
+}
+
+.pandai-mission-node.is-completed .pandai-mission-node__card {
+  background: rgba(244, 255, 247, 0.96);
+}
+
+.pandai-mission-node.is-current .pandai-mission-node__marker {
+  background: #ffffff;
+  color: #52b98a;
+  box-shadow:
+    0 0 0 6px rgba(255, 255, 255, 0.88),
+    0 0 0 11px rgba(102, 204, 154, 0.22),
+    0 16px 28px rgba(76, 94, 83, 0.18);
+}
+
+.pandai-mission-node.is-current .pandai-mission-node__card {
+  box-shadow:
+    0 16px 30px rgba(62, 112, 84, 0.15),
+    inset 0 0 0 2px rgba(94, 199, 151, 0.6);
+}
+
+.pandai-mission-node.is-locked .pandai-mission-node__marker {
+  background: linear-gradient(160deg, #d2d7dc, #c1c8cf);
+  color: #67717b;
+}
+
+.pandai-mission-node.is-locked .pandai-mission-node__card {
+  background: rgba(247, 248, 249, 0.95);
+}
+
+.pandai-mission-reward-end {
+  position: absolute;
+  left: 50%;
+  bottom: 34px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  transform: translateX(-50%);
+  text-align: center;
+}
+
+.pandai-mission-reward-end strong {
+  color: #243a2d;
+  font-size: 24px;
+  letter-spacing: -0.03em;
+}
+
+.pandai-mission-reward-end span:last-child {
+  color: #6d7f74;
+  font-size: 14px;
+}
+
+.pandai-mission-reward-end__orb {
+  width: 138px;
+  height: 138px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 30% 30%, #fff8d7, #ffe9a6 56%, #ffd16d 100%);
+  box-shadow:
+    0 0 0 10px rgba(255, 230, 166, 0.34),
+    0 24px 40px rgba(243, 192, 73, 0.2);
+}
+
+.pandai-mission-reward-end__orb span {
+  font-size: 34px;
+  line-height: 1;
+  color: #a45d16;
+}
+
+.pandai-mission-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.pandai-mission-preview-card {
+  min-height: 130px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  border-radius: 22px;
+  border: 1px solid #dde4df;
+  background: linear-gradient(180deg, #fbfcfb, #f2f4f3);
+}
+
+.pandai-mission-preview-card__icon {
+  width: 58px;
+  height: 58px;
+  flex: none;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 24px;
+  background: #eef2ef;
+  color: #748179;
+}
+
+.pandai-mission-preview-card strong {
+  display: block;
+  color: #2d4135;
+  font-size: 24px;
+  letter-spacing: -0.03em;
+}
+
+.pandai-mission-preview-card p {
+  margin: 6px 0 0;
+  color: #77857d;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.pandai-mission-preview-card.is-locked {
+  opacity: 0.82;
+}
+
+.pandai-mission-preview-card.is-coming-soon {
+  background: linear-gradient(180deg, #fbfcfc, #f7f7f7);
+}
+
+.pandai-mission-sidebar__section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pandai-mission-sidebar__reward {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: inset 0 0 0 1px rgba(214, 226, 218, 0.9);
+}
+
+.pandai-mission-sidebar__reward-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 22px;
+  display: grid;
+  place-items: center;
+  color: #ffffff;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.pandai-mission-sidebar__reward-icon.tone-tng {
+  background: linear-gradient(160deg, #2553b9, #1e77da);
+}
+
+.pandai-mission-sidebar__reward-icon.tone-tealive {
+  background: linear-gradient(160deg, #7e5c9a, #bb7a63);
+}
+
+.pandai-mission-sidebar__reward-icon.tone-mixue {
+  background: linear-gradient(160deg, #f5ad5f, #ef6f5e);
+}
+
+.pandai-mission-sidebar__reward strong {
+  display: block;
+  color: #25382c;
+  font-size: 20px;
+  letter-spacing: -0.03em;
+}
+
+.pandai-mission-sidebar__reward p {
+  margin: 4px 0 0;
+  color: #6a7b70;
+  font-size: 14px;
+}
+
+.pandai-mission-sidebar__stats {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pandai-mission-sidebar__stat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid #e4ebe6;
+}
+
+.pandai-mission-sidebar__stat:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.pandai-mission-sidebar__stat span {
+  color: #6b7c71;
+  font-size: 14px;
+}
+
+.pandai-mission-sidebar__stat strong {
+  color: #23382c;
+  font-size: 16px;
+  text-align: right;
+}
+
+.pandai-mission-sidebar__legend {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pandai-mission-sidebar__legend-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #5f7367;
+  font-size: 14px;
+}
+
+.pandai-mission-sidebar__legend-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+}
+
+.pandai-mission-sidebar__legend-dot.is-completed {
+  background: #56c77f;
+}
+
+.pandai-mission-sidebar__legend-dot.is-current {
+  background: #ffffff;
+  border: 3px solid #5fcf99;
+  box-shadow: 0 0 0 4px rgba(95, 207, 153, 0.18);
+}
+
+.pandai-mission-sidebar__legend-dot.is-locked {
+  background: #cad2d9;
+}
+
+.pandai-mission-route-mobile {
+  padding: 24px 18px 22px;
+}
+
+.pandai-mission-route-mobile__item {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 14px;
+}
+
+.pandai-mission-route-mobile__item.is-left .pandai-mission-route-mobile__card {
+  text-align: right;
+}
+
+.pandai-mission-route-mobile__rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.pandai-mission-route-mobile__dot {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 17px;
+  font-weight: 700;
+  background: #d4d9de;
+  color: #6d7882;
+}
+
+.pandai-mission-route-mobile__line {
+  width: 4px;
+  min-height: 54px;
+  border-radius: 999px;
+  background: #d3dad4;
+}
+
+.pandai-mission-route-mobile__card {
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow:
+    0 14px 28px rgba(62, 93, 73, 0.08),
+    inset 0 0 0 1px rgba(216, 228, 220, 0.9);
+}
+
+.pandai-mission-route-mobile__card strong {
+  display: block;
+  color: #213128;
+  font-size: 18px;
+  letter-spacing: -0.03em;
+}
+
+.pandai-mission-route-mobile__item.is-completed .pandai-mission-route-mobile__dot {
+  background: linear-gradient(160deg, #4bbc79, #82db88);
+  color: #ffffff;
+}
+
+.pandai-mission-route-mobile__item.is-current .pandai-mission-route-mobile__dot {
+  background: #ffffff;
+  color: #52b98a;
+  box-shadow:
+    0 0 0 5px rgba(255, 255, 255, 0.88),
+    0 0 0 10px rgba(102, 204, 154, 0.18);
+}
+
+.pandai-mission-route-mobile__item.is-current .pandai-mission-route-mobile__card {
+  box-shadow:
+    0 16px 30px rgba(62, 112, 84, 0.12),
+    inset 0 0 0 2px rgba(94, 199, 151, 0.54);
+}
+
+.pandai-mission-route-mobile__reward {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.pandai-mission-route-mobile__reward strong {
+  color: #243a2d;
+  font-size: 22px;
+  letter-spacing: -0.03em;
+}
+
+.pandai-mission-route-mobile__reward span:last-child {
+  color: #6d7f74;
+  font-size: 14px;
+}
+
+@media (max-width: 1300px) {
+  .pandai-mission-page__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pandai-mission-panel--sidebar {
+    position: static;
+  }
+}
+
+@media (max-width: 860px) {
+  .pandai-mission-panel--journey,
+  .pandai-mission-panel--sidebar {
+    padding: 20px;
+  }
+
+  .pandai-mission-panel__head {
+    flex-direction: column;
+  }
+
+  .pandai-mission-panel__copy h1 {
+    font-size: 32px;
+  }
+
+  .pandai-mission-panel__progress {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .pandai-mission-route--desktop {
+    display: none;
+  }
+
+  .pandai-mission-route--mobile {
+    display: block;
+  }
+
+  .pandai-mission-preview-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .pandai-mission-page {
+    margin-top: 16px;
+  }
+
+  .pandai-mission-sidebar__reward {
+    grid-template-columns: 60px minmax(0, 1fr);
+  }
+
+  .pandai-mission-sidebar__reward-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 18px;
+    font-size: 18px;
+  }
+
+  .pandai-mission-preview-card {
+    min-height: auto;
+    padding: 18px;
+  }
+
+  .pandai-mission-preview-card strong {
+    font-size: 20px;
+  }
+}
+
 .pandai-learn-dropdown {
   position: absolute;
   top: calc(100% + 10px);
@@ -1106,6 +1736,12 @@
   box-shadow: 0 24px 54px rgba(27, 65, 43, 0.1);
 }
 
+.pandai-quiz-attempt.is-answer-guided-later .pandai-attempt-question {
+  filter: none;
+  opacity: 1;
+  pointer-events: none;
+}
+
 .pandai-quiz-attempt.is-save-guided .pandai-attempt-top,
 .pandai-quiz-attempt.is-save-guided .pandai-attempt-card__header,
 .pandai-quiz-attempt.is-save-guided .pandai-attempt-question,
@@ -1250,6 +1886,15 @@
     0 0 22px var(--guide-focus-halo);
 }
 
+.pandai-attempt-question.is-guide-focus .pandai-attempt-equation {
+  color: #1f3127;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.pandai-attempt-question.is-guide-focus .pandai-attempt-expression-list {
+  color: #33483b;
+}
+
 .pandai-question-guide {
   position: absolute;
   top: clamp(132px, 15vw, 212px);
@@ -1320,6 +1965,27 @@
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease;
+}
+
+.pandai-question-guide__next.is-read-locked,
+.pandai-question-guide__next:disabled {
+  background: linear-gradient(180deg, #dbe7df, #ccd8d0);
+  color: #6b7f73;
+  box-shadow: inset 0 0 0 1px rgba(170, 187, 176, 0.5);
+  cursor: not-allowed;
+}
+
+.pandai-question-guide__helper {
+  align-self: flex-end;
+  color: #6f8277;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
 }
 
 .pandai-question-guide--choices {
@@ -1782,19 +2448,41 @@
   z-index: 6;
   filter: none;
   opacity: 1;
-  border-color: var(--guide-focus-border);
-  background: rgba(255, 255, 255, 0.98);
+  border-color: #59c78e;
+  background: linear-gradient(180deg, #f4fcf7 0%, #e3f7eb 100%);
   box-shadow:
     0 0 0 4px var(--guide-focus-outline),
     var(--guide-focus-shadow),
-    0 0 22px var(--guide-focus-halo);
+    0 0 22px var(--guide-focus-halo),
+    inset 0 0 0 1px rgba(89, 199, 142, 0.34),
+    inset 0 18px 32px rgba(118, 214, 164, 0.12);
+}
+
+.pandai-quiz-attempt.is-save-guided .pandai-attempt-choice.is-guide-save-answer::after {
+  content: "Selected";
+  position: absolute;
+  top: -12px;
+  right: 16px;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  background: linear-gradient(135deg, #55c78a, #7ddaa0);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  box-shadow: 0 12px 22px rgba(85, 199, 138, 0.24);
 }
 
 .pandai-quiz-attempt.is-save-guided
   .pandai-attempt-choice.is-guide-save-answer
   .pandai-attempt-radio {
-  border-color: var(--guide-focus-border);
-  box-shadow: inset 0 0 0 6px rgba(99, 203, 149, 0.34);
+  border-color: #4ec286;
+  box-shadow:
+    inset 0 0 0 6px #4ec286,
+    0 0 0 4px rgba(89, 199, 142, 0.14);
 }
 
 .pandai-attempt-radio {
@@ -4431,6 +5119,11 @@
     opacity: 0.24;
   }
 
+  .pandai-quiz-attempt.is-answer-guided-later .pandai-attempt-question {
+    filter: none;
+    opacity: 1;
+  }
+
   .pandai-attempt-card__header h2 {
     font-size: 22px;
   }
@@ -4482,7 +5175,16 @@
     box-shadow:
       0 0 0 3px var(--guide-focus-outline),
       0 0 18px var(--guide-focus-halo),
-      inset 0 0 18px rgba(99, 203, 149, 0.12);
+      inset 0 0 18px rgba(99, 203, 149, 0.12),
+      inset 0 0 0 1px rgba(89, 199, 142, 0.3);
+  }
+
+  .pandai-quiz-attempt.is-save-guided .pandai-attempt-choice.is-guide-save-answer::after {
+    top: -10px;
+    right: 12px;
+    min-height: 24px;
+    padding: 0 10px;
+    font-size: 11px;
   }
 
   .pandai-question-guide {
@@ -4523,6 +5225,10 @@
     min-width: 84px;
     height: 36px;
     font-size: 14px;
+  }
+
+  .pandai-question-guide__helper {
+    font-size: 11px;
   }
 
   .pandai-question-guide--choices {

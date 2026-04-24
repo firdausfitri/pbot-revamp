@@ -5,6 +5,7 @@ import {
   getLearnerDisplayName,
   resolveLanguageLabel,
 } from "../../onboarding/profileStorage";
+import { STARTER_FIRST_MILESTONE_ID, STARTER_MISSION_ID } from "../../missionData";
 
 const PBotContext = createContext(null);
 
@@ -16,6 +17,7 @@ const ROUTE_MODE_MAP = {
   quiz: "Quiz",
   battle: "Battle",
   achievement: "Learning",
+  mission: "Learning",
   potential: "Learning",
   rewards: "Learning",
 };
@@ -154,6 +156,33 @@ function createQuizContext() {
   };
 }
 
+function createMissionContext() {
+  return {
+    hubUnlocked: false,
+    hasViewedHub: false,
+    activeMissionId: STARTER_MISSION_ID,
+    completedMilestoneIds: [],
+  };
+}
+
+function unlockMissionContext(currentMissionContext) {
+  if (currentMissionContext.hubUnlocked) {
+    return currentMissionContext;
+  }
+
+  const completedMilestoneIds = currentMissionContext.completedMilestoneIds.includes(
+    STARTER_FIRST_MILESTONE_ID,
+  )
+    ? currentMissionContext.completedMilestoneIds
+    : [...currentMissionContext.completedMilestoneIds, STARTER_FIRST_MILESTONE_ID];
+
+  return {
+    ...currentMissionContext,
+    hubUnlocked: true,
+    completedMilestoneIds,
+  };
+}
+
 function resetQuestionState(quizContext) {
   return {
     ...quizContext,
@@ -208,6 +237,7 @@ function getInitialState(profile = {}) {
     uiContext: {
       topicPickerHighlighted: false,
     },
+    missionContext: createMissionContext(),
   };
 }
 
@@ -522,6 +552,7 @@ function reducer(state, action) {
           mode: getModeFromRoute("practice"),
         },
         quizContext: createQuizContext(),
+        missionContext: unlockMissionContext(state.missionContext),
       };
     }
     case "set_topic_picker_highlight": {
@@ -530,6 +561,32 @@ function reducer(state, action) {
         uiContext: {
           ...state.uiContext,
           topicPickerHighlighted: Boolean(action.highlighted),
+        },
+      };
+    }
+    case "unlock_mission_hub": {
+      return {
+        ...state,
+        missionContext: unlockMissionContext(state.missionContext),
+      };
+    }
+    case "open_mission_hub": {
+      if (!state.missionContext.hubUnlocked) {
+        return state;
+      }
+
+      return {
+        ...state,
+        pageContext: {
+          ...state.pageContext,
+          route: "mission",
+          mode: getModeFromRoute("mission"),
+          learnView: null,
+        },
+        quizContext: createQuizContext(),
+        missionContext: {
+          ...unlockMissionContext(state.missionContext),
+          hasViewedHub: true,
         },
       };
     }
@@ -749,6 +806,8 @@ export function PBotContextProvider({ children, profile }) {
         },
         clearQuizElimination: () =>
           dispatch({ type: "set_quiz_eliminated_options", options: [] }),
+        unlockMissionHub: () => dispatch({ type: "unlock_mission_hub" }),
+        openMissionHub: () => dispatch({ type: "open_mission_hub" }),
         requestTopicPickerFocus: () => {
           dispatch({ type: "set_topic_picker_highlight", highlighted: true });
           setTimeout(() => {

@@ -13,6 +13,7 @@ import {
   getLearnerInitial,
   normalizeLearnerName,
 } from "./onboarding/profileStorage";
+import { MISSION_DEFINITIONS, STARTER_MISSION_ID } from "./missionData";
 import "./App.css";
 
 const TOP_MENU = [
@@ -24,6 +25,7 @@ const TOP_MENU = [
   { id: "learn", label: "Learn" },
   { id: "achievement", label: "Achievement" },
   { id: "potential", label: "Potential" },
+  { id: "mission", label: "Mission" },
   { id: "rewards", label: "Rewards" },
 ];
 
@@ -32,6 +34,7 @@ const SECOND_GUIDED_QUESTION_INDEX = 1;
 const SECOND_GUIDED_WRONG_OPTION_ID = "C";
 const THIRD_GUIDED_QUESTION_INDEX = 2;
 const ENGLISH_ORDINALS = ["first", "second", "third", "fourth", "fifth"];
+const READ_GUIDE_LOCK_MS = 2000;
 
 function getEnglishOrdinalQuestionLabel(questionNumber, total) {
   if (questionNumber >= total) {
@@ -657,6 +660,257 @@ function SubjectAnalysisView({ analysis, onBackToReport, onOpenTopic }) {
   );
 }
 
+const MISSION_ROUTE_DESKTOP_PATH =
+  "M 760 78 C 756 118 688 132 592 176 S 372 248 262 270 S 418 360 608 386 S 382 476 300 500 S 534 586 742 618";
+
+function getMissionMilestoneState(milestoneId, milestones, completedMilestoneIds) {
+  if (completedMilestoneIds.has(milestoneId)) {
+    return "completed";
+  }
+
+  const currentMilestone = milestones.find((milestone) => !completedMilestoneIds.has(milestone.id));
+  if (currentMilestone?.id === milestoneId) {
+    return "current";
+  }
+
+  return "locked";
+}
+
+function getMissionMilestoneEyebrow(state) {
+  if (state === "completed") {
+    return "Completed";
+  }
+
+  if (state === "current") {
+    return "Current";
+  }
+
+  return "Locked";
+}
+
+function MissionHubView({ selectedReward, missionContext }) {
+  const reward = REWARD_OPTIONS.find((item) => item.id === selectedReward) || REWARD_OPTIONS[0];
+  const activeMission =
+    MISSION_DEFINITIONS.find((mission) => mission.id === missionContext.activeMissionId) ||
+    MISSION_DEFINITIONS.find((mission) => mission.id === STARTER_MISSION_ID) ||
+    MISSION_DEFINITIONS[0];
+  const milestones = activeMission?.milestones || [];
+  const completedMilestoneIds = new Set(missionContext.completedMilestoneIds);
+  const completedCount = milestones.filter((milestone) =>
+    completedMilestoneIds.has(milestone.id),
+  ).length;
+  const currentMilestone =
+    milestones.find((milestone) => !completedMilestoneIds.has(milestone.id)) || null;
+  const progressPercent =
+    milestones.length > 0 ? (completedCount / milestones.length) * 100 : 0;
+  const lockedMission = MISSION_DEFINITIONS.find((mission) => mission.status === "locked");
+  const comingSoonMission = MISSION_DEFINITIONS.find(
+    (mission) => mission.status === "coming-soon",
+  );
+
+  return (
+    <section className="pandai-mission-page">
+      <div className="pandai-mission-page__grid">
+        <div className="pandai-mission-page__main">
+          <article className="pandai-mission-panel pandai-mission-panel--journey">
+            <header className="pandai-mission-panel__head">
+              <div className="pandai-mission-panel__copy">
+                <span className="pandai-mission-panel__eyebrow">Mission Hub</span>
+                <h1>{activeMission.title}</h1>
+                <p>{activeMission.subtitle}</p>
+              </div>
+
+                <div className="pandai-mission-panel__progress" aria-label="Mission progress">
+                  <div className="pandai-mission-panel__progress-top">
+                    <strong>
+                      {completedCount} of {milestones.length} completed
+                    </strong>
+                    <span>{Math.round(progressPercent)}%</span>
+                  </div>
+                <div className="pandai-mission-panel__progress-track" aria-hidden="true">
+                  <span style={{ width: `${progressPercent}%` }} />
+                </div>
+              </div>
+            </header>
+
+            <div className="pandai-mission-route pandai-mission-route--desktop">
+              <svg
+                className="pandai-mission-route__path"
+                viewBox="0 0 1000 700"
+                aria-hidden="true"
+                preserveAspectRatio="none"
+              >
+                <path d={MISSION_ROUTE_DESKTOP_PATH} />
+              </svg>
+
+              {milestones.map((milestone) => {
+                const state = getMissionMilestoneState(
+                  milestone.id,
+                  milestones,
+                  completedMilestoneIds,
+                );
+
+                return (
+                  <article
+                    key={milestone.id}
+                    className={`pandai-mission-node is-${state} is-card-${milestone.cardSide}`}
+                    style={{
+                      "--node-top": milestone.desktop.top,
+                      "--node-left": milestone.desktop.left,
+                    }}
+                  >
+                    <span className="pandai-mission-node__marker" aria-hidden="true">
+                      {state === "completed" ? "✓" : state === "locked" ? "🔒" : ""}
+                    </span>
+                    <div className="pandai-mission-node__card">
+                      <span className="pandai-mission-node__eyebrow">
+                        {getMissionMilestoneEyebrow(state)}
+                      </span>
+                      <strong>{milestone.label}</strong>
+                    </div>
+                  </article>
+                );
+              })}
+
+              <div className="pandai-mission-reward-end">
+                <div className="pandai-mission-reward-end__orb" aria-hidden="true">
+                  <span>{reward.icon}</span>
+                </div>
+                <strong>{reward.label}</strong>
+                <span>Selected reward endpoint</span>
+              </div>
+            </div>
+
+            <div className="pandai-mission-route pandai-mission-route--mobile">
+              <div className="pandai-mission-route-mobile">
+                {milestones.map((milestone, index) => {
+                  const state = getMissionMilestoneState(
+                    milestone.id,
+                    milestones,
+                    completedMilestoneIds,
+                  );
+
+                  return (
+                    <article
+                      key={milestone.id}
+                      className={`pandai-mission-route-mobile__item is-${state} is-${milestone.mobileAlign}`}
+                    >
+                      <div className="pandai-mission-route-mobile__rail" aria-hidden="true">
+                        <span className="pandai-mission-route-mobile__dot">
+                          {state === "completed" ? "✓" : state === "locked" ? "🔒" : ""}
+                        </span>
+                        {index < milestones.length - 1 ? (
+                          <span className="pandai-mission-route-mobile__line" />
+                        ) : null}
+                      </div>
+
+                      <div className="pandai-mission-route-mobile__card">
+                        <span className="pandai-mission-node__eyebrow">
+                          {getMissionMilestoneEyebrow(state)}
+                        </span>
+                        <strong>{milestone.label}</strong>
+                      </div>
+                    </article>
+                  );
+                })}
+
+                <div className="pandai-mission-route-mobile__reward">
+                  <div className="pandai-mission-reward-end__orb" aria-hidden="true">
+                    <span>{reward.icon}</span>
+                  </div>
+                  <strong>{reward.label}</strong>
+                  <span>Selected reward endpoint</span>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <div className="pandai-mission-preview-grid">
+            {lockedMission ? (
+              <article className="pandai-mission-preview-card is-locked">
+                <span className="pandai-mission-preview-card__icon" aria-hidden="true">
+                  🔒
+                </span>
+                <div>
+                  <strong>{lockedMission.title}</strong>
+                  <p>{lockedMission.subtitle}</p>
+                </div>
+              </article>
+            ) : null}
+
+            {comingSoonMission ? (
+              <article className="pandai-mission-preview-card is-coming-soon">
+                <span className="pandai-mission-preview-card__icon" aria-hidden="true">
+                  ⏳
+                </span>
+                <div>
+                  <strong>{comingSoonMission.title}</strong>
+                  <p>{comingSoonMission.subtitle}</p>
+                </div>
+              </article>
+            ) : null}
+          </div>
+        </div>
+
+        <aside className="pandai-mission-sidebar">
+          <article className="pandai-mission-panel pandai-mission-panel--sidebar">
+            <div className="pandai-mission-sidebar__section">
+              <span className="pandai-mission-panel__eyebrow">Selected reward</span>
+              <div className="pandai-mission-sidebar__reward">
+                <div className={`pandai-mission-sidebar__reward-icon tone-${reward.id}`}>
+                  {reward.icon}
+                </div>
+                <div>
+                  <strong>{reward.label}</strong>
+                  <p>{reward.brand}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="pandai-mission-sidebar__section">
+              <span className="pandai-mission-panel__eyebrow">Current mission</span>
+              <div className="pandai-mission-sidebar__stats">
+                <div className="pandai-mission-sidebar__stat">
+                  <span>Mission</span>
+                  <strong>{activeMission.title}</strong>
+                </div>
+                <div className="pandai-mission-sidebar__stat">
+                  <span>Status</span>
+                  <strong>
+                    {completedCount} of {milestones.length} done
+                  </strong>
+                </div>
+                <div className="pandai-mission-sidebar__stat">
+                  <span>Next milestone</span>
+                  <strong>{currentMilestone?.label || "Reward unlocked"}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="pandai-mission-sidebar__section">
+              <span className="pandai-mission-panel__eyebrow">Legend</span>
+              <div className="pandai-mission-sidebar__legend">
+                <div className="pandai-mission-sidebar__legend-item">
+                  <span className="pandai-mission-sidebar__legend-dot is-completed" />
+                  <span>Completed milestone</span>
+                </div>
+                <div className="pandai-mission-sidebar__legend-item">
+                  <span className="pandai-mission-sidebar__legend-dot is-current" />
+                  <span>Current milestone</span>
+                </div>
+                <div className="pandai-mission-sidebar__legend-item">
+                  <span className="pandai-mission-sidebar__legend-dot is-locked" />
+                  <span>Locked milestone</span>
+                </div>
+              </div>
+            </div>
+          </article>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
 function WelcomeLanguageScreen({ selectedLanguage, onSelectLanguage, onContinue }) {
   return (
     <div className="pandai-onboarding-shell">
@@ -1113,7 +1367,7 @@ function PrototypeAppPage({ onboardingProfile }) {
 
   return (
     <PBotContextProvider profile={onboardingProfile}>
-      <AppShell />
+      <AppShell selectedReward={onboardingProfile.selectedReward} />
     </PBotContextProvider>
   );
 }
@@ -1125,9 +1379,10 @@ function handleCardKey(event, callback) {
   }
 }
 
-function AppShell() {
+function AppShell({ selectedReward }) {
   const location = useLocation();
-  const { userContext, pageContext, quizContext, uiContext, actions } = usePBotContext();
+  const { userContext, pageContext, quizContext, uiContext, missionContext, actions } =
+    usePBotContext();
   const topicPickerRef = useRef(null);
   const learnMenuRef = useRef(null);
   const mathGuideCardRef = useRef(null);
@@ -1149,6 +1404,10 @@ function AppShell() {
   const [onboardingGuideStep, setOnboardingGuideStep] = useState(() =>
     homeGuideKey ? "subject" : null,
   );
+  const [readGuideSession, setReadGuideSession] = useState({
+    countdown: 0,
+    key: null,
+  });
   const resolvedAnalysisSubjectId =
     pageContext.route === "practice" &&
     pageContext.selectedSubject === "Mathematics" &&
@@ -1165,6 +1424,7 @@ function AppShell() {
   );
   const showAchievementView = pageContext.route === "achievement";
   const showLearnView = pageContext.route === "learn";
+  const showMissionHubView = pageContext.route === "mission";
   const showPracticeAnalysisView = pageContext.route === "practice" && Boolean(analysisData);
   const currentQuestion = quizContext.currentQuestion;
   const displayQuestionIndex = quizContext.displayIndex ?? quizContext.currentIndex;
@@ -1255,7 +1515,11 @@ function AppShell() {
     !quizContext.inProgress;
   const showQuestionReadGuide =
     Boolean(homeGuideKey) &&
-    (onboardingGuideStep === "question" || onboardingGuideStep === "question-wrong") &&
+    (
+      onboardingGuideStep === "question" ||
+      onboardingGuideStep === "question-wrong" ||
+      onboardingGuideStep === "question-later"
+    ) &&
     showQuizAttempt;
   const showAnswerChoiceGuide =
     Boolean(homeGuideKey) &&
@@ -1356,6 +1620,19 @@ function AppShell() {
   const showAnyExplanationGuide = showExplanationGuide || showWrongExplanationGuide;
   const showAnyContinueGuide = showContinueGuide || showWrongContinueGuide;
   const showLockedContinueGuide = showAnyContinueGuide && !showSubmitAnswer;
+  const readGuideSessionKey = showQuestionReadGuide
+    ? `${quizContext.currentIndex}:${onboardingGuideStep}`
+    : null;
+  const isActiveReadGuideSession = readGuideSession.key === readGuideSessionKey;
+  const readGuideCountdown = readGuideSessionKey
+    ? isActiveReadGuideSession
+      ? readGuideSession.countdown
+      : Math.ceil(READ_GUIDE_LOCK_MS / 1000)
+    : 0;
+  const readGuideLocked = Boolean(readGuideSessionKey) && readGuideCountdown > 0;
+  const readGuideHelperText = readGuideLocked
+    ? `Take a moment to read first • ${Math.max(readGuideCountdown, 1)}s`
+    : "Continue when you're ready 👇";
   const hasBlockingQuizAttemptGuide =
     showQuestionReadGuide ||
     showAnswerChoiceGuide ||
@@ -1453,6 +1730,41 @@ function AppShell() {
 
     questionGuideRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [showQuestionReadGuide]);
+
+  useEffect(() => {
+    if (!readGuideSessionKey) {
+      return undefined;
+    }
+
+    const unlockAt = Date.now() + READ_GUIDE_LOCK_MS;
+    let countdownInterval = null;
+
+    function syncReadGuideCountdown() {
+      const remainingMs = unlockAt - Date.now();
+      const countdown = remainingMs <= 0 ? 0 : Math.ceil(remainingMs / 1000);
+
+      setReadGuideSession({
+        countdown,
+        key: readGuideSessionKey,
+      });
+
+      if (remainingMs <= 0 && countdownInterval !== null) {
+        window.clearInterval(countdownInterval);
+      }
+    }
+
+    const kickoffTimeout = window.setTimeout(() => {
+      syncReadGuideCountdown();
+      countdownInterval = window.setInterval(syncReadGuideCountdown, 150);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(kickoffTimeout);
+      if (countdownInterval !== null) {
+        window.clearInterval(countdownInterval);
+      }
+    };
+  }, [readGuideSessionKey]);
 
   useEffect(() => {
     if (!showAnswerChoiceGuide || !choiceGuideRef.current) {
@@ -1613,6 +1925,16 @@ function AppShell() {
     actions.stopQuiz();
   }
 
+  function openMissionHub() {
+    if (showAppGuide || !missionContext.hubUnlocked) {
+      return;
+    }
+
+    setOpenExplanationFor(null);
+    setExpandedChapterId(null);
+    actions.openMissionHub();
+  }
+
   function changeSubject() {
     if (showAppGuide) {
       return;
@@ -1692,6 +2014,9 @@ function AppShell() {
 
     setOpenExplanationFor(null);
     setOnboardingGuideStep(null);
+    if (!missionContext.hubUnlocked) {
+      actions.unlockMissionHub();
+    }
     setQuizCompletionModal({
       submittedAt: new Date().toISOString(),
       quizKey: activeQuizCompletionKey,
@@ -1703,6 +2028,12 @@ function AppShell() {
   }
 
   function practiceNewSet() {
+    if (missionContext.hubUnlocked && !missionContext.hasViewedHub) {
+      closeQuizCompletionModal();
+      openMissionHub();
+      return;
+    }
+
     closeQuizCompletionModal();
     startTopicQuiz(pageContext.selectedTopic || "Functions", quizContext.total);
   }
@@ -1741,7 +2072,7 @@ function AppShell() {
         quizContext.currentIndex >= THIRD_GUIDED_QUESTION_INDEX &&
         quizContext.currentIndex < quizContext.total - 1
       ) {
-        nextGuideStep = "answer-third";
+        nextGuideStep = "question-later";
       }
 
       setOnboardingGuideStep(nextGuideStep);
@@ -1758,7 +2089,7 @@ function AppShell() {
     if (showWrongContinueGuide) {
       setOnboardingGuideStep(
         Boolean(homeGuideKey) && quizContext.currentIndex === SECOND_GUIDED_QUESTION_INDEX
-          ? "answer-third"
+          ? "question-later"
           : null,
       );
       setOpenExplanationFor(null);
@@ -1811,9 +2142,21 @@ function AppShell() {
   }
 
   function advanceToChoiceGuide() {
-    setOnboardingGuideStep(
-      onboardingGuideStep === "question-wrong" ? "answer-wrong" : "choices",
-    );
+    if (readGuideLocked) {
+      return;
+    }
+
+    if (onboardingGuideStep === "question-wrong") {
+      setOnboardingGuideStep("answer-wrong");
+      return;
+    }
+
+    if (onboardingGuideStep === "question-later") {
+      setOnboardingGuideStep("answer-third");
+      return;
+    }
+
+    setOnboardingGuideStep("choices");
   }
 
   function advanceToAnswerGuide() {
@@ -1871,6 +2214,10 @@ function AppShell() {
 
     setOpenExplanationFor(null);
     setLearnMenuOpen(false);
+    if (route === "mission") {
+      openMissionHub();
+      return;
+    }
     actions.setRoute(route);
     if (route === "home") {
       setExpandedChapterId(null);
@@ -1923,8 +2270,11 @@ function AppShell() {
 
         <main className="pandai-main">
           <section className={`pandai-menu ${showAppGuide ? "is-locked" : ""}`}>
-            {TOP_MENU.map((item) => (
-              item.id === "learn" ? (
+            {TOP_MENU.map((item) => {
+              const isMissionItem = item.id === "mission";
+              const isMissionLocked = isMissionItem && !missionContext.hubUnlocked;
+
+              return item.id === "learn" ? (
                 <div key={item.id} className="pandai-menu__dropdown" ref={learnMenuRef}>
                   <button
                     type="button"
@@ -1970,15 +2320,20 @@ function AppShell() {
                   type="button"
                   className={`pandai-menu__item ${
                     pageContext.route === item.id ? "is-active" : ""
-                  }`}
-                  disabled={showAppGuide}
+                  } ${isMissionLocked ? "is-locked" : ""}`}
+                  disabled={showAppGuide || isMissionLocked}
                   onClick={() => handleMenuSelect(item.id)}
                 >
                   <span className="pandai-menu__dot" aria-hidden="true" />
                   {item.label}
+                  {isMissionLocked ? (
+                    <span className="pandai-menu__lock" aria-hidden="true">
+                      🔒
+                    </span>
+                  ) : null}
                 </button>
               )
-            ))}
+            })}
           </section>
 
           {showQuizWorkspace ? (
@@ -2000,7 +2355,7 @@ function AppShell() {
                               : showLockedContinueGuide
                                 ? "is-continue-guided"
                                 : ""
-                }`}
+                }${showGuidedAnswerGuide && onboardingGuideStep === "answer-third" ? " is-answer-guided-later" : ""}`}
               >
                 <div
                   ref={showProgressBarGuide || showWrongProgressBarGuide ? progressGuideRef : null}
@@ -2080,11 +2435,17 @@ function AppShell() {
                         </p>
                         <button
                           type="button"
-                          className="pandai-question-guide__next"
+                          className={`pandai-question-guide__next ${
+                            readGuideLocked ? "is-read-locked" : ""
+                          }`}
+                          disabled={readGuideLocked}
                           onClick={advanceToChoiceGuide}
                         >
                           Next
                         </button>
+                        <span className="pandai-question-guide__helper">
+                          {readGuideHelperText}
+                        </span>
                       </div>
                     </div>
                   ) : showAnswerChoiceGuide ? (
@@ -2138,12 +2499,14 @@ function AppShell() {
                       <div className="pandai-question-guide__bubble">
                         <h3 id="pandai-answer-guide-title">
                           {onboardingGuideStep === "answer-third"
-                            ? "This one looks right."
+                            ? "This one looks promising 👀"
                             : showWrongAnswerGuide
                             ? "This might not be the answer 👀"
                             : "Try this answer 👇"}
                         </h3>
-                        {onboardingGuideStep === "answer-third" ? null : (
+                        {onboardingGuideStep === "answer-third" ? (
+                          <p>Let's try this one 👇</p>
+                        ) : (
                           <p>
                             {showWrongAnswerGuide
                               ? "Try it anyway 👇"
@@ -2408,9 +2771,9 @@ function AppShell() {
                     />
                     <div className="pandai-question-guide__bubble">
                       <h3 id="pandai-wrong-result-guide-title">
-                        That wasn't the correct answer 👀
+                        Not this one 👀
                       </h3>
-                      <p>We chose it on purpose to see what happens next 👇</p>
+                      <p>We picked this one on purpose so you can see what happens next 👇</p>
                       <button
                         type="button"
                         className="pandai-question-guide__next"
@@ -2804,6 +3167,8 @@ function AppShell() {
               onOpenView={openLearnSubView}
               onGoPractice={goPracticeFromBookmarks}
             />
+          ) : showMissionHubView ? (
+            <MissionHubView selectedReward={selectedReward} missionContext={missionContext} />
           ) : showAchievementView ? (
             <AchievementView onOpenSubject={openSubjectAnalysis} />
           ) : showPracticeAnalysisView ? (

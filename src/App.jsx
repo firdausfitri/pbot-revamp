@@ -2,6 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { PBotContextProvider, usePBotContext } from "./pbot/context/PBotContext";
 import pbotMascot from "./pbot/assets/pbot-mascot.svg";
+import completionCoinIcon from "./assets/completion-coin-icon.svg";
+import completionHeartIcon from "./assets/completion-heart-icon.svg";
+import completionScoreIcon from "./assets/completion-score-icon.svg";
 import { LEARN_MENU_ITEMS } from "./learnMenuItems";
 import { LearnPageView } from "./learnViews";
 import {
@@ -12,6 +15,12 @@ import {
   getLearnerDisplayName,
   getLearnerInitial,
   normalizeLearnerName,
+  persistLearnerName,
+  persistPreferredLanguage,
+  persistSelectedReward,
+  readLearnerName,
+  readPreferredLanguage,
+  readSelectedReward,
 } from "./onboarding/profileStorage";
 import { MISSION_DEFINITIONS, STARTER_MISSION_ID } from "./missionData";
 import "./App.css";
@@ -35,6 +44,8 @@ const SECOND_GUIDED_WRONG_OPTION_ID = "C";
 const THIRD_GUIDED_QUESTION_INDEX = 2;
 const ENGLISH_ORDINALS = ["first", "second", "third", "fourth", "fifth"];
 const READ_GUIDE_LOCK_MS = 2000;
+const QUIZ_COMPLETION_GUIDE_STEPS = ["points", "coin", "life", "practice"];
+const QUIZ_COMPLETION_GUIDE_DONE_STEP = QUIZ_COMPLETION_GUIDE_STEPS.length;
 
 function getEnglishOrdinalQuestionLabel(questionNumber, total) {
   if (questionNumber >= total) {
@@ -62,6 +73,55 @@ function formatSubmissionDate(dateValue) {
     month: "short",
     year: "numeric",
   }).format(new Date(dateValue));
+}
+
+function getQuizCompletionGuideCopy({ stepKey, correctCount, coinReward, incorrectCount }) {
+  if (stepKey === "points") {
+    return {
+      title: "Points added",
+      body:
+        correctCount === 1
+          ? "1 right answer gave you +1 point."
+          : `${correctCount} right answers gave you +${correctCount} points.`,
+      cta: "Next",
+    };
+  }
+
+  if (stepKey === "coin") {
+    return {
+      title: coinReward > 0 ? "Coin earned" : "No coin yet",
+      body:
+        coinReward > 0
+          ? `Nice. You completed this quiz, so you got +${coinReward} coin.`
+          : "Complete the quiz with 1 star to earn a coin.",
+      cta: "Next",
+    };
+  }
+
+  if (stepKey === "practice") {
+    return {
+      title: "Keep going 👇",
+      body: "Tap Practise new set to continue 🚀",
+      cta: null,
+    };
+  }
+
+  if (incorrectCount <= 0) {
+    return {
+      title: "No life used",
+      body: "Nice. You made no wrong answers this round.",
+      cta: "Next",
+    };
+  }
+
+  return {
+    title: "Life used",
+    body:
+      incorrectCount === 1
+        ? "1 wrong answer used 1 life."
+        : `${incorrectCount} wrong answers used 1 life.`,
+    cta: "Next",
+  };
 }
 
 const SUBJECT_CARDS = [
@@ -313,6 +373,7 @@ const APP_PATHS = {
   onboardingName: "/onboarding/name",
   onboardingReward: "/onboarding/reward",
   onboardingMission: "/onboarding/mission",
+  missionHub: "/mission",
   app: "/app",
   quiz: "/app/quiz",
   practice: "/app/practice",
@@ -325,6 +386,21 @@ function createEmptyOnboardingProfile() {
     preferredLanguage: "",
     learnerName: "",
     selectedReward: "",
+  };
+}
+
+function createInitialOnboardingProfile() {
+  const learnerName = readLearnerName("");
+  const selectedReward = readSelectedReward("");
+
+  if (!learnerName && !selectedReward) {
+    return createEmptyOnboardingProfile();
+  }
+
+  return {
+    preferredLanguage: readPreferredLanguage("en"),
+    learnerName,
+    selectedReward,
   };
 }
 
@@ -358,6 +434,7 @@ function hasCompletedOnboarding(profile) {
 
 const LEGACY_PATH_REDIRECTS = [
   { from: "/home", to: APP_PATHS.app },
+  { from: "/app/mission", to: APP_PATHS.missionHub },
   { from: "/quiz", to: APP_PATHS.quiz },
   { from: "/quiz/*", to: APP_PATHS.quiz },
   { from: "/practice", to: APP_PATHS.practice },
@@ -661,7 +738,7 @@ function SubjectAnalysisView({ analysis, onBackToReport, onOpenTopic }) {
 }
 
 const MISSION_ROUTE_DESKTOP_PATH =
-  "M 760 78 C 756 118 688 132 592 176 S 372 248 262 270 S 418 360 608 386 S 382 476 300 500 S 534 586 742 618";
+  "M 742 84 C 730 130 668 152 582 198 S 338 286 228 324 S 432 422 672 456 S 408 544 270 576 S 442 638 560 642 S 754 642 860 628";
 
 function getMissionMilestoneState(milestoneId, milestones, completedMilestoneIds) {
   if (completedMilestoneIds.has(milestoneId)) {
@@ -688,7 +765,58 @@ function getMissionMilestoneEyebrow(state) {
   return "Locked";
 }
 
-function MissionHubView({ selectedReward, missionContext }) {
+function getMissionMilestoneTargetLabel(milestone) {
+  if (!milestone?.targetCoins) {
+    return "";
+  }
+
+  return `Reach ${milestone.targetCoins} coins`;
+}
+
+function getPracticeMissionGuideSteps({ learnerName, currentMilestone, currentStepLabel, reward }) {
+  const milestoneLabel = currentMilestone?.label || "your next milestone";
+  const milestoneTarget = currentMilestone
+    ? getMissionMilestoneTargetLabel(currentMilestone)
+    : "Check your next target";
+  const rewardLabel = reward?.label || "your selected reward";
+
+  return [
+    {
+      title: "This is your Mission Hub",
+      body: `${learnerName}, this space shows your mission progress before you jump into another practice set.`,
+      focusArea: "header",
+    },
+    {
+      title: "Track progress here",
+      body: `This header shows how many milestones you have completed, your progress bar, and where you are now at ${currentStepLabel}.`,
+      focusArea: "header",
+    },
+    {
+      title: "Follow the mission route",
+      body: `This route shows completed, current, and locked checkpoints. Right now your next target is ${milestoneLabel}, and you need to ${milestoneTarget.toLowerCase()}.`,
+      focusArea: "route",
+    },
+    {
+      title: "Reward and summary stay here",
+      body: `On the right, student can always check the selected reward, remaining milestones, and what needs to be unlocked next for ${rewardLabel}.`,
+      focusArea: "sidebar",
+    },
+    {
+      title: "You can open this again later",
+      body: "Nanti kalau nak semak semula mission progress, just tap the Mission tab in the navbar to come back here anytime.",
+      focusArea: "navbar",
+    },
+  ];
+}
+
+function MissionHubView({
+  selectedReward,
+  missionContext,
+  missionGuide = null,
+  onNextMissionGuideStep = null,
+  onSkipMissionGuide = null,
+  onContinueMissionGuide = null,
+}) {
   const reward = REWARD_OPTIONS.find((item) => item.id === selectedReward) || REWARD_OPTIONS[0];
   const activeMission =
     MISSION_DEFINITIONS.find((mission) => mission.id === missionContext.activeMissionId) ||
@@ -701,19 +829,37 @@ function MissionHubView({ selectedReward, missionContext }) {
   ).length;
   const currentMilestone =
     milestones.find((milestone) => !completedMilestoneIds.has(milestone.id)) || null;
+  const currentMilestoneIndex = currentMilestone
+    ? milestones.findIndex((milestone) => milestone.id === currentMilestone.id)
+    : -1;
   const progressPercent =
     milestones.length > 0 ? (completedCount / milestones.length) * 100 : 0;
+  const remainingCount = Math.max(milestones.length - completedCount, 0);
+  const currentStepLabel =
+    currentMilestoneIndex >= 0
+      ? `Step ${currentMilestoneIndex + 1} of ${milestones.length}`
+      : "All steps completed";
+  const currentMilestoneTarget = currentMilestone
+    ? getMissionMilestoneTargetLabel(currentMilestone)
+    : "Reward ready to unlock";
   const lockedMission = MISSION_DEFINITIONS.find((mission) => mission.status === "locked");
   const comingSoonMission = MISSION_DEFINITIONS.find(
     (mission) => mission.status === "coming-soon",
   );
 
+  const guideFocusArea = missionGuide?.focusArea || null;
+  const isMissionGuideActive = Boolean(missionGuide);
+
   return (
-    <section className="pandai-mission-page">
+    <section className={`pandai-mission-page ${isMissionGuideActive ? "is-guided" : ""}`}>
       <div className="pandai-mission-page__grid">
         <div className="pandai-mission-page__main">
           <article className="pandai-mission-panel pandai-mission-panel--journey">
-            <header className="pandai-mission-panel__head">
+            <header
+              className={`pandai-mission-panel__head ${
+                guideFocusArea === "header" ? "is-guide-focus" : ""
+              }`}
+            >
               <div className="pandai-mission-panel__copy">
                 <span className="pandai-mission-panel__eyebrow">Mission Hub</span>
                 <h1>{activeMission.title}</h1>
@@ -733,17 +879,104 @@ function MissionHubView({ selectedReward, missionContext }) {
               </div>
             </header>
 
-            <div className="pandai-mission-route pandai-mission-route--desktop">
+            {missionGuide ? (
+              <div
+                className="pandai-mission-entry-guide"
+                role="dialog"
+                aria-modal="false"
+                aria-labelledby="pandai-mission-entry-guide-title"
+              >
+                <img
+                  src={pbotMascot}
+                  alt=""
+                  aria-hidden="true"
+                  className="pandai-home-guide__mascot pandai-mission-entry-guide__mascot"
+                />
+                <div className="pandai-home-guide__bubble pandai-mission-entry-guide__bubble">
+                  <h3 id="pandai-mission-entry-guide-title">{missionGuide.title}</h3>
+                  <p>{missionGuide.body}</p>
+                  <div className="pandai-mission-entry-guide__actions">
+                    {missionGuide.isFinalStep ? (
+                      <>
+                        <button
+                          type="button"
+                          className="pandai-quiz-completion__btn pandai-quiz-completion__btn--ghost"
+                          onClick={onSkipMissionGuide}
+                        >
+                          Skip for now
+                        </button>
+                        <button
+                          type="button"
+                          className="pandai-quiz-completion__btn pandai-quiz-completion__btn--solid"
+                          autoFocus
+                          onClick={onContinueMissionGuide}
+                        >
+                          {missionGuide.finalCtaLabel}
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="pandai-quiz-completion__btn pandai-quiz-completion__btn--solid"
+                        autoFocus
+                        onClick={onNextMissionGuideStep}
+                      >
+                        Next
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            <div
+              className={`pandai-mission-route pandai-mission-route--desktop ${
+                guideFocusArea === "route" ? "is-guide-focus" : ""
+              }`}
+            >
+              <div className="pandai-mission-route__spotlight">
+                <span className="pandai-mission-panel__eyebrow">Current target</span>
+                <strong>{currentMilestone?.label || "Journey complete"}</strong>
+                <p>
+                  {currentMilestone
+                    ? `${currentMilestoneTarget} to unlock the next checkpoint.`
+                    : "All milestones complete. Your selected reward is ready."}
+                </p>
+                <div className="pandai-mission-route__spotlight-chips">
+                  <span>{currentStepLabel}</span>
+                </div>
+              </div>
+
               <svg
                 className="pandai-mission-route__path"
                 viewBox="0 0 1000 700"
                 aria-hidden="true"
                 preserveAspectRatio="none"
               >
-                <path d={MISSION_ROUTE_DESKTOP_PATH} />
+                <defs>
+                  <linearGradient
+                    id="pandai-mission-progress-gradient"
+                    x1="0"
+                    y1="0"
+                    x2="1000"
+                    y2="0"
+                    gradientUnits="userSpaceOnUse"
+                  >
+                    <stop offset="0%" stopColor="#5bc98f" />
+                    <stop offset="55%" stopColor="#8adf9c" />
+                    <stop offset="100%" stopColor="#b8ef9f" />
+                  </linearGradient>
+                </defs>
+                <path className="pandai-mission-route__path-base" d={MISSION_ROUTE_DESKTOP_PATH} />
+                <path
+                  className="pandai-mission-route__path-progress"
+                  d={MISSION_ROUTE_DESKTOP_PATH}
+                  pathLength="100"
+                  style={{ "--mission-path-progress": `${progressPercent}` }}
+                />
               </svg>
 
-              {milestones.map((milestone) => {
+              {milestones.map((milestone, index) => {
                 const state = getMissionMilestoneState(
                   milestone.id,
                   milestones,
@@ -760,13 +993,16 @@ function MissionHubView({ selectedReward, missionContext }) {
                     }}
                   >
                     <span className="pandai-mission-node__marker" aria-hidden="true">
-                      {state === "completed" ? "✓" : state === "locked" ? "🔒" : ""}
+                      {state === "completed" ? "✓" : state === "current" ? index + 1 : "🔒"}
                     </span>
                     <div className="pandai-mission-node__card">
                       <span className="pandai-mission-node__eyebrow">
                         {getMissionMilestoneEyebrow(state)}
                       </span>
                       <strong>{milestone.label}</strong>
+                      <span className="pandai-mission-node__meta">
+                        {getMissionMilestoneTargetLabel(milestone)}
+                      </span>
                     </div>
                   </article>
                 );
@@ -776,12 +1012,19 @@ function MissionHubView({ selectedReward, missionContext }) {
                 <div className="pandai-mission-reward-end__orb" aria-hidden="true">
                   <span>{reward.icon}</span>
                 </div>
-                <strong>{reward.label}</strong>
-                <span>Selected reward endpoint</span>
+                <div className="pandai-mission-reward-end__content">
+                  <span className="pandai-mission-reward-end__eyebrow">Final reward</span>
+                  <strong>{reward.label}</strong>
+                  <span>Selected reward endpoint</span>
+                </div>
               </div>
             </div>
 
-            <div className="pandai-mission-route pandai-mission-route--mobile">
+            <div
+              className={`pandai-mission-route pandai-mission-route--mobile ${
+                guideFocusArea === "route" ? "is-guide-focus" : ""
+              }`}
+            >
               <div className="pandai-mission-route-mobile">
                 {milestones.map((milestone, index) => {
                   const state = getMissionMilestoneState(
@@ -797,7 +1040,7 @@ function MissionHubView({ selectedReward, missionContext }) {
                     >
                       <div className="pandai-mission-route-mobile__rail" aria-hidden="true">
                         <span className="pandai-mission-route-mobile__dot">
-                          {state === "completed" ? "✓" : state === "locked" ? "🔒" : ""}
+                          {state === "completed" ? "✓" : state === "current" ? index + 1 : "🔒"}
                         </span>
                         {index < milestones.length - 1 ? (
                           <span className="pandai-mission-route-mobile__line" />
@@ -809,12 +1052,16 @@ function MissionHubView({ selectedReward, missionContext }) {
                           {getMissionMilestoneEyebrow(state)}
                         </span>
                         <strong>{milestone.label}</strong>
+                        <span className="pandai-mission-node__meta">
+                          {getMissionMilestoneTargetLabel(milestone)}
+                        </span>
                       </div>
                     </article>
                   );
                 })}
 
                 <div className="pandai-mission-route-mobile__reward">
+                  <span className="pandai-mission-reward-end__eyebrow">Final reward</span>
                   <div className="pandai-mission-reward-end__orb" aria-hidden="true">
                     <span>{reward.icon}</span>
                   </div>
@@ -852,7 +1099,11 @@ function MissionHubView({ selectedReward, missionContext }) {
           </div>
         </div>
 
-        <aside className="pandai-mission-sidebar">
+        <aside
+          className={`pandai-mission-sidebar ${
+            guideFocusArea === "sidebar" ? "is-guide-focus" : ""
+          }`}
+        >
           <article className="pandai-mission-panel pandai-mission-panel--sidebar">
             <div className="pandai-mission-sidebar__section">
               <span className="pandai-mission-panel__eyebrow">Selected reward</span>
@@ -869,20 +1120,31 @@ function MissionHubView({ selectedReward, missionContext }) {
 
             <div className="pandai-mission-sidebar__section">
               <span className="pandai-mission-panel__eyebrow">Current mission</span>
-              <div className="pandai-mission-sidebar__stats">
-                <div className="pandai-mission-sidebar__stat">
-                  <span>Mission</span>
-                  <strong>{activeMission.title}</strong>
+              <div className="pandai-mission-sidebar__current">
+                <strong>{currentMilestone?.label || "Reward unlocked"}</strong>
+                <p>
+                  {currentMilestone
+                    ? `${currentMilestoneTarget}.`
+                    : "All milestones complete. Your selected reward is ready."}
+                </p>
+                <div className="pandai-mission-sidebar__current-chips">
+                  <span>{currentStepLabel}</span>
                 </div>
-                <div className="pandai-mission-sidebar__stat">
-                  <span>Status</span>
+              </div>
+              <div className="pandai-mission-sidebar__summary">
+                <div className="pandai-mission-sidebar__summary-item">
+                  <span>Completed</span>
+                  <strong>{completedCount}</strong>
+                </div>
+                <div className="pandai-mission-sidebar__summary-item">
+                  <span>Remaining</span>
+                  <strong>{remainingCount}</strong>
+                </div>
+                <div className="pandai-mission-sidebar__summary-item">
+                  <span>Unlock at</span>
                   <strong>
-                    {completedCount} of {milestones.length} done
+                    {currentMilestone?.targetCoins ? `${currentMilestone.targetCoins} coins` : reward.label}
                   </strong>
-                </div>
-                <div className="pandai-mission-sidebar__stat">
-                  <span>Next milestone</span>
-                  <strong>{currentMilestone?.label || "Reward unlocked"}</strong>
                 </div>
               </div>
             </div>
@@ -1360,14 +1622,17 @@ function PrototypeMissionPage({ onboardingProfile }) {
   );
 }
 
-function PrototypeAppPage({ onboardingProfile }) {
+function PrototypeAppPage({ onboardingProfile, initialRoute = "home" }) {
   if (!hasCompletedOnboarding(onboardingProfile)) {
     return <Navigate to={APP_PATHS.onboarding} replace />;
   }
 
   return (
     <PBotContextProvider profile={onboardingProfile}>
-      <AppShell selectedReward={onboardingProfile.selectedReward} />
+      <AppShell
+        selectedReward={onboardingProfile.selectedReward}
+        initialRoute={initialRoute}
+      />
     </PBotContextProvider>
   );
 }
@@ -1379,7 +1644,7 @@ function handleCardKey(event, callback) {
   }
 }
 
-function AppShell({ selectedReward }) {
+function AppShell({ selectedReward, initialRoute = "home" }) {
   const location = useLocation();
   const { userContext, pageContext, quizContext, uiContext, missionContext, actions } =
     usePBotContext();
@@ -1393,14 +1658,19 @@ function AppShell({ selectedReward }) {
   const answerGuideRef = useRef(null);
   const saveGuideRef = useRef(null);
   const progressGuideRef = useRef(null);
+  const practiceNewSetButtonRef = useRef(null);
   const explanationGuideRef = useRef(null);
   const continueGuideRef = useRef(null);
+  const initialRouteHandledRef = useRef(false);
   const homeGuideKey = location.state?.showHomeGuide ? location.key : null;
   const [analysisSubjectId, setAnalysisSubjectId] = useState("kssm-am");
   const [learnMenuOpen, setLearnMenuOpen] = useState(false);
   const [expandedChapterId, setExpandedChapterId] = useState(null);
   const [openExplanationFor, setOpenExplanationFor] = useState(null);
   const [quizCompletionModal, setQuizCompletionModal] = useState(null);
+  const [completionGuideStep, setCompletionGuideStep] = useState(QUIZ_COMPLETION_GUIDE_DONE_STEP);
+  const [missionGuideStep, setMissionGuideStep] = useState(null);
+  const [milestone2GuideStep, setMilestone2GuideStep] = useState(null);
   const [onboardingGuideStep, setOnboardingGuideStep] = useState(() =>
     homeGuideKey ? "subject" : null,
   );
@@ -1426,7 +1696,57 @@ function AppShell({ selectedReward }) {
   const showLearnView = pageContext.route === "learn";
   const showMissionHubView = pageContext.route === "mission";
   const showPracticeAnalysisView = pageContext.route === "practice" && Boolean(analysisData);
+  const activeMissionDefinition =
+    MISSION_DEFINITIONS.find((mission) => mission.id === missionContext.activeMissionId) ||
+    MISSION_DEFINITIONS.find((mission) => mission.id === STARTER_MISSION_ID) ||
+    MISSION_DEFINITIONS[0];
+  const currentMissionMilestone =
+    activeMissionDefinition?.milestones?.find(
+      (milestone) => !missionContext.completedMilestoneIds.includes(milestone.id),
+    ) || null;
+  const currentMissionMilestoneStep =
+    currentMissionMilestone && activeMissionDefinition?.milestones?.length
+      ? activeMissionDefinition.milestones.findIndex(
+          (milestone) => milestone.id === currentMissionMilestone.id,
+        ) + 1
+      : null;
+  const learnerName = getLearnerDisplayName(userContext.name);
+  const learnerInitial = getLearnerInitial(userContext.name);
+  const missionGuideSteps = useMemo(
+    () =>
+      getPracticeMissionGuideSteps({
+        learnerName,
+        currentMilestone: currentMissionMilestone,
+        currentStepLabel:
+          currentMissionMilestoneStep && activeMissionDefinition?.milestones?.length
+            ? `Step ${currentMissionMilestoneStep} of ${activeMissionDefinition.milestones.length}`
+            : "All steps completed",
+        reward:
+          REWARD_OPTIONS.find((item) => item.id === selectedReward) || REWARD_OPTIONS[0],
+      }),
+    [
+      activeMissionDefinition,
+      currentMissionMilestone,
+      currentMissionMilestoneStep,
+      learnerName,
+      selectedReward,
+    ],
+  );
+  const isMissionGuideActive =
+    showMissionHubView && missionGuideStep !== null && !missionContext.hasCompletedPracticeMissionGuide;
+  const activeMissionGuide =
+    isMissionGuideActive && missionGuideSteps[missionGuideStep]
+      ? {
+          ...missionGuideSteps[missionGuideStep],
+          stepIndex: missionGuideStep,
+          totalSteps: missionGuideSteps.length,
+          isFinalStep: missionGuideStep === missionGuideSteps.length - 1,
+          finalCtaLabel: `Continue Milestone ${currentMissionMilestoneStep || 2}`,
+        }
+      : null;
   const currentQuestion = quizContext.currentQuestion;
+  const isMilestone2GuidedQuiz =
+    showQuizAttempt && quizContext.guideMode === "milestone2";
   const displayQuestionIndex = quizContext.displayIndex ?? quizContext.currentIndex;
   const questionNumber = Math.min(displayQuestionIndex + 1, quizContext.total);
   const questionProgress = `${questionNumber} / ${quizContext.total}`;
@@ -1468,22 +1788,25 @@ function AppShell({ selectedReward }) {
         : "Good effort. Practise another set to strengthen this topic.";
   const completionCoinReward = starCount > 0 ? 1 : 0;
   const completionHeartDelta = incorrectCount > 0 ? -1 : 0;
-  const completionCoachTitle =
-    scorePercent >= 100 ? "Amazing work! 🎉" : scorePercent >= 70 ? "Nice work! 🎉" : "Good try! 💪";
-  const completionCoachSummary = `${quizContext.correctCount} right, ${incorrectCount} wrong${
-    scorePercent >= 70 ? ". Good progress!" : "."
-  }`;
-  const completionCoachRewardLine =
-    completionHeartDelta < 0
-      ? `+${quizContext.correctCount} points • +${completionCoinReward} ${
-          completionCoinReward === 1 ? "coin" : "coins"
-        } • -${Math.abs(completionHeartDelta)} ${
-          Math.abs(completionHeartDelta) === 1 ? "life" : "lives"
-        }`
-      : `+${quizContext.correctCount} points • +${completionCoinReward} ${
-          completionCoinReward === 1 ? "coin" : "coins"
-        }`;
-  const completionCoachPrompt = "Tap Practise new set 👉";
+  const isCompletionGuideActive = completionGuideStep < QUIZ_COMPLETION_GUIDE_DONE_STEP;
+  const completionGuideStepKey =
+    QUIZ_COMPLETION_GUIDE_STEPS[completionGuideStep] || null;
+  const isPracticeCompletionGuideStep = completionGuideStepKey === "practice";
+  const isRewardCompletionGuideStep =
+    isCompletionGuideActive && !isPracticeCompletionGuideStep;
+  const completionGuideCopy = isCompletionGuideActive
+    ? getQuizCompletionGuideCopy({
+        stepKey: completionGuideStepKey,
+        correctCount: quizContext.correctCount,
+        coinReward: completionCoinReward,
+        incorrectCount,
+      })
+    : null;
+  const completionUnlockNote = nextTopic
+    ? "Earn 12 stars to start the next topic for free"
+    : submittedOnLabel
+      ? `Submitted on ${submittedOnLabel}`
+      : "Topic completed";
   const ordinalQuestionLabel = getEnglishOrdinalQuestionLabel(
     questionNumber,
     quizContext.total,
@@ -1493,21 +1816,32 @@ function AppShell({ selectedReward }) {
     quizContext.isReviewingFinalSet ? "review" : "active"
   }`;
   const isExplanationOpen = openExplanationFor === explanationKey;
-  const learnerName = getLearnerDisplayName(userContext.name);
-  const learnerInitial = getLearnerInitial(userContext.name);
+  const showMilestone2ReadGuide =
+    isMilestone2GuidedQuiz &&
+    !quizContext.saved &&
+    !quizContext.selectedOption &&
+    milestone2GuideStep === "read";
+  const showMilestone2ChoiceGuide =
+    isMilestone2GuidedQuiz &&
+    !quizContext.saved &&
+    !quizContext.selectedOption &&
+    milestone2GuideStep === "choose";
   const showHomeSubjectGuide =
     Boolean(homeGuideKey) &&
+    !isMilestone2GuidedQuiz &&
     onboardingGuideStep === "subject" &&
     pageContext.route === "home" &&
     !pageContext.selectedSubject;
   const showChapterSelectionGuide =
     Boolean(homeGuideKey) &&
+    !isMilestone2GuidedQuiz &&
     onboardingGuideStep === "chapter" &&
     showQuizWorkspace &&
     isMathSelected &&
     !quizContext.inProgress;
   const showTopicStartGuide =
     Boolean(homeGuideKey) &&
+    !isMilestone2GuidedQuiz &&
     onboardingGuideStep === "topic" &&
     showQuizWorkspace &&
     isMathSelected &&
@@ -1515,6 +1849,7 @@ function AppShell({ selectedReward }) {
     !quizContext.inProgress;
   const showQuestionReadGuide =
     Boolean(homeGuideKey) &&
+    !isMilestone2GuidedQuiz &&
     (
       onboardingGuideStep === "question" ||
       onboardingGuideStep === "question-wrong" ||
@@ -1523,18 +1858,22 @@ function AppShell({ selectedReward }) {
     showQuizAttempt;
   const showAnswerChoiceGuide =
     Boolean(homeGuideKey) &&
+    !isMilestone2GuidedQuiz &&
     onboardingGuideStep === "choices" &&
     showQuizAttempt;
   const showCorrectAnswerGuide =
     Boolean(homeGuideKey) &&
+    !isMilestone2GuidedQuiz &&
     (onboardingGuideStep === "answer" || onboardingGuideStep === "answer-third") &&
     showQuizAttempt;
   const showWrongAnswerGuide =
     Boolean(homeGuideKey) &&
+    !isMilestone2GuidedQuiz &&
     onboardingGuideStep === "answer-wrong" &&
     showQuizAttempt;
   const showSaveAnswerGuide =
     Boolean(homeGuideKey) &&
+    !isMilestone2GuidedQuiz &&
     (onboardingGuideStep === "save" || onboardingGuideStep === "save-wrong") &&
     showQuizAttempt &&
     Boolean(quizContext.selectedOption) &&
@@ -1567,6 +1906,7 @@ function AppShell({ selectedReward }) {
   const showGuidedAnswerGuide = showCorrectAnswerGuide || showWrongAnswerGuide;
   const showWrongResultGuidePending =
     Boolean(homeGuideKey) &&
+    !isMilestone2GuidedQuiz &&
     onboardingGuideStep === "wrong-result" &&
     showQuizAttempt &&
     (quizContext.checking || (quizContext.saved && !quizContext.isCorrect));
@@ -1574,6 +1914,7 @@ function AppShell({ selectedReward }) {
     showWrongResultGuidePending && quizContext.saved && !quizContext.isCorrect;
   const showProgressGuidePending =
     Boolean(homeGuideKey) &&
+    !isMilestone2GuidedQuiz &&
     onboardingGuideStep === "progress" &&
     showQuizAttempt &&
     (quizContext.checking || (quizContext.saved && quizContext.isCorrect));
@@ -1585,12 +1926,14 @@ function AppShell({ selectedReward }) {
     quizContext.correctCount < quizContext.total;
   const showWrongProgressBarGuide =
     Boolean(homeGuideKey) &&
+    !isMilestone2GuidedQuiz &&
     onboardingGuideStep === "progress-wrong" &&
     showQuizAttempt &&
     quizContext.saved &&
     !quizContext.isCorrect;
   const showExplanationGuide =
     Boolean(homeGuideKey) &&
+    !isMilestone2GuidedQuiz &&
     onboardingGuideStep === "explanation" &&
     showQuizAttempt &&
     quizContext.saved &&
@@ -1598,6 +1941,7 @@ function AppShell({ selectedReward }) {
     !isExplanationOpen;
   const showWrongExplanationGuide =
     Boolean(homeGuideKey) &&
+    !isMilestone2GuidedQuiz &&
     onboardingGuideStep === "explanation-wrong" &&
     showQuizAttempt &&
     quizContext.saved &&
@@ -1605,6 +1949,7 @@ function AppShell({ selectedReward }) {
     !isExplanationOpen;
   const showContinueGuide =
     Boolean(homeGuideKey) &&
+    !isMilestone2GuidedQuiz &&
     onboardingGuideStep === "continue" &&
     showQuizAttempt &&
     quizContext.saved &&
@@ -1612,6 +1957,7 @@ function AppShell({ selectedReward }) {
     isExplanationOpen;
   const showWrongContinueGuide =
     Boolean(homeGuideKey) &&
+    !isMilestone2GuidedQuiz &&
     onboardingGuideStep === "continue-wrong" &&
     showQuizAttempt &&
     quizContext.saved &&
@@ -1648,11 +1994,14 @@ function AppShell({ selectedReward }) {
     showSubmitAnswer && !hasBlockingQuizAttemptGuide && !showQuizCompletionModal;
   const showVisibleContinueGuide =
     (showAnyContinueGuide || showFinalReviewCallout) && !showQuizCompletionModal;
+  const isQuizFocusMode = showQuizAttempt && !showQuizCompletionModal;
   const showAppGuide =
     showHomeSubjectGuide ||
     showChapterSelectionGuide ||
     showTopicStartGuide ||
     showQuizAttemptGuide;
+  const isAppChromeLocked = showAppGuide || isQuizFocusMode || isMissionGuideActive;
+  const showLearnDropdown = learnMenuOpen && !isAppChromeLocked;
   const activeGuideTitleId = showTopicStartGuide
     ? "pandai-topic-guide-title"
     : "pandai-chapter-guide-title";
@@ -1662,6 +2011,25 @@ function AppShell({ selectedReward }) {
   const chapterGuideBody = showTopicStartGuide
     ? "Tap Start to begin the next available set in this chapter."
     : "This page shows the chapters in your selected subject. Open the first chapter to see available topics.";
+
+  useEffect(() => {
+    if (initialRouteHandledRef.current) {
+      return;
+    }
+
+    if (initialRoute !== "mission") {
+      initialRouteHandledRef.current = true;
+      return;
+    }
+
+    if (!missionContext.hubUnlocked) {
+      actions.unlockMissionHub();
+      return;
+    }
+
+    actions.openMissionHub();
+    initialRouteHandledRef.current = true;
+  }, [actions, initialRoute, missionContext.hubUnlocked]);
 
   useEffect(() => {
     if (!uiContext.topicPickerHighlighted || !topicPickerRef.current) {
@@ -1724,12 +2092,12 @@ function AppShell({ selectedReward }) {
   }, [showTopicStartGuide]);
 
   useEffect(() => {
-    if (!showQuestionReadGuide || !questionGuideRef.current) {
+    if ((!showQuestionReadGuide && !showMilestone2ReadGuide) || !questionGuideRef.current) {
       return;
     }
 
     questionGuideRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [showQuestionReadGuide]);
+  }, [showMilestone2ReadGuide, showQuestionReadGuide]);
 
   useEffect(() => {
     if (!readGuideSessionKey) {
@@ -1767,12 +2135,12 @@ function AppShell({ selectedReward }) {
   }, [readGuideSessionKey]);
 
   useEffect(() => {
-    if (!showAnswerChoiceGuide || !choiceGuideRef.current) {
+    if ((!showAnswerChoiceGuide && !showMilestone2ChoiceGuide) || !choiceGuideRef.current) {
       return;
     }
 
     choiceGuideRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [showAnswerChoiceGuide]);
+  }, [showAnswerChoiceGuide, showMilestone2ChoiceGuide]);
 
   useEffect(() => {
     if (!showGuidedAnswerGuide || !answerGuideRef.current) {
@@ -1814,6 +2182,38 @@ function AppShell({ selectedReward }) {
     continueGuideRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [showVisibleContinueGuide]);
 
+  useEffect(() => {
+    if (pageContext.route === "mission") {
+      return;
+    }
+
+    setMissionGuideStep(null);
+  }, [pageContext.route]);
+
+  useEffect(() => {
+    if (!isMilestone2GuidedQuiz) {
+      setMilestone2GuideStep(null);
+      return;
+    }
+
+    if (!quizContext.saved && !quizContext.selectedOption) {
+      setMilestone2GuideStep("read");
+    }
+  }, [
+    isMilestone2GuidedQuiz,
+    quizContext.currentIndex,
+    quizContext.saved,
+    quizContext.selectedOption,
+  ]);
+
+  useEffect(() => {
+    if (!isMissionGuideActive) {
+      return;
+    }
+
+    setLearnMenuOpen(false);
+  }, [isMissionGuideActive]);
+
   function selectSubject(subject) {
     if (showHomeSubjectGuide && subject !== "Mathematics") {
       return;
@@ -1831,11 +2231,12 @@ function AppShell({ selectedReward }) {
   }
 
   function openRecentActivity(activity) {
-    if (showAppGuide) {
+    if (isAppChromeLocked) {
       return;
     }
 
     setOpenExplanationFor(null);
+    setLearnMenuOpen(false);
     actions.setLastActivity(activity);
     if (activity.subject === "Mathematics") {
       actions.startQuiz({ topic: activity.topic, total: 5 });
@@ -1848,7 +2249,7 @@ function AppShell({ selectedReward }) {
   }
 
   function openSubjectAnalysis(subjectId) {
-    if (showAppGuide) {
+    if (isAppChromeLocked) {
       return;
     }
 
@@ -1862,7 +2263,7 @@ function AppShell({ selectedReward }) {
   }
 
   function openReportCard() {
-    if (showAppGuide) {
+    if (isAppChromeLocked) {
       return;
     }
 
@@ -1872,7 +2273,7 @@ function AppShell({ selectedReward }) {
   }
 
   function openLearnSubView(view, options = {}) {
-    if (showAppGuide) {
+    if (isAppChromeLocked) {
       return;
     }
 
@@ -1890,7 +2291,7 @@ function AppShell({ selectedReward }) {
   }
 
   function goPracticeFromBookmarks() {
-    if (showAppGuide) {
+    if (isAppChromeLocked) {
       return;
     }
 
@@ -1904,7 +2305,7 @@ function AppShell({ selectedReward }) {
   }
 
   function returnToReportCard() {
-    if (showAppGuide) {
+    if (isAppChromeLocked) {
       return;
     }
 
@@ -1914,7 +2315,7 @@ function AppShell({ selectedReward }) {
   }
 
   function openTopicFromAnalysis(topic) {
-    if (showAppGuide) {
+    if (isAppChromeLocked) {
       return;
     }
 
@@ -1926,7 +2327,7 @@ function AppShell({ selectedReward }) {
   }
 
   function openMissionHub() {
-    if (showAppGuide || !missionContext.hubUnlocked) {
+    if (isAppChromeLocked || !missionContext.hubUnlocked) {
       return;
     }
 
@@ -1936,7 +2337,7 @@ function AppShell({ selectedReward }) {
   }
 
   function changeSubject() {
-    if (showAppGuide) {
+    if (isAppChromeLocked) {
       return;
     }
 
@@ -1949,7 +2350,7 @@ function AppShell({ selectedReward }) {
   }
 
   function switchToMathematics() {
-    if (showAppGuide) {
+    if (isAppChromeLocked) {
       return;
     }
 
@@ -1961,11 +2362,13 @@ function AppShell({ selectedReward }) {
     actions.stopQuiz();
   }
 
-  function startTopicQuiz(topic, total = 5) {
+  function startTopicQuiz(topic, total = 5, options = {}) {
     setOpenExplanationFor(null);
+    setLearnMenuOpen(false);
     setOnboardingGuideStep(showTopicStartGuide ? "question" : null);
+    setMilestone2GuideStep(options.guideMode === "milestone2" ? "read" : null);
     actions.setSelectedTopic(topic);
-    actions.startQuiz({ topic, total });
+    actions.startQuiz({ topic, total, guideMode: options.guideMode });
   }
 
   function handleChapterToggle(chapter) {
@@ -1985,7 +2388,7 @@ function AppShell({ selectedReward }) {
   }
 
   function backToChapters() {
-    if (showQuizAttemptGuide) {
+    if (showQuizAttemptGuide || isQuizFocusMode) {
       return;
     }
 
@@ -1994,7 +2397,16 @@ function AppShell({ selectedReward }) {
   }
 
   function saveAnswer() {
+    if (showMilestone2ReadGuide || showMilestone2ChoiceGuide) {
+      return;
+    }
+
     if (showQuestionReadGuide || showAnswerChoiceGuide || showGuidedAnswerGuide) {
+      return;
+    }
+
+    if (isMilestone2GuidedQuiz) {
+      actions.saveQuizAnswer();
       return;
     }
 
@@ -2014,6 +2426,7 @@ function AppShell({ selectedReward }) {
 
     setOpenExplanationFor(null);
     setOnboardingGuideStep(null);
+    setCompletionGuideStep(0);
     if (!missionContext.hubUnlocked) {
       actions.unlockMissionHub();
     }
@@ -2024,18 +2437,66 @@ function AppShell({ selectedReward }) {
   }
 
   function closeQuizCompletionModal() {
+    setCompletionGuideStep(QUIZ_COMPLETION_GUIDE_DONE_STEP);
     setQuizCompletionModal(null);
   }
 
-  function practiceNewSet() {
-    if (missionContext.hubUnlocked && !missionContext.hasViewedHub) {
-      closeQuizCompletionModal();
-      openMissionHub();
+  function advanceQuizCompletionGuide() {
+    if (!isCompletionGuideActive) {
       return;
     }
 
+    const nextGuideStep = completionGuideStep + 1;
+    if (nextGuideStep >= QUIZ_COMPLETION_GUIDE_DONE_STEP) {
+      setCompletionGuideStep(QUIZ_COMPLETION_GUIDE_DONE_STEP);
+      window.setTimeout(() => {
+        practiceNewSetButtonRef.current?.focus();
+      }, 0);
+      return;
+    }
+
+    setCompletionGuideStep(nextGuideStep);
+    if (QUIZ_COMPLETION_GUIDE_STEPS[nextGuideStep] === "practice") {
+      window.setTimeout(() => {
+        practiceNewSetButtonRef.current?.focus();
+      }, 0);
+    }
+  }
+
+  function practiceNewSet() {
     closeQuizCompletionModal();
-    startTopicQuiz(pageContext.selectedTopic || "Functions", quizContext.total);
+    if (missionContext.hasCompletedPracticeMissionGuide || !currentMissionMilestone) {
+      startTopicQuiz(pageContext.selectedTopic || "Functions", quizContext.total);
+      return;
+    }
+
+    setMissionGuideStep(0);
+    openMissionHub();
+  }
+
+  function advanceMissionGuideStep() {
+    if (!missionGuideSteps[missionGuideStep + 1]) {
+      return;
+    }
+
+    setMissionGuideStep((current) => current + 1);
+  }
+
+  function completePracticeMissionGuide() {
+    actions.completePracticeMissionGuide();
+    setMissionGuideStep(null);
+  }
+
+  function skipMissionEntryPrompt() {
+    completePracticeMissionGuide();
+    actions.setRoute("practice");
+  }
+
+  function continueMissionEntryPrompt() {
+    completePracticeMissionGuide();
+    startTopicQuiz(pageContext.selectedTopic || "Functions", quizContext.total, {
+      guideMode: missionContext.hasCompletedMilestone2Guide ? null : "milestone2",
+    });
   }
 
   function startNextTopicQuiz() {
@@ -2107,6 +2568,7 @@ function AppShell({ selectedReward }) {
 
   function selectAnswer(optionId) {
     if (
+      showMilestone2ReadGuide ||
       showQuestionReadGuide ||
       showAnswerChoiceGuide ||
       showSaveAnswerGuide ||
@@ -2138,7 +2600,22 @@ function AppShell({ selectedReward }) {
     if (quizContext.eliminatedOptions.includes(optionId)) {
       return;
     }
+
+    if (isMilestone2GuidedQuiz) {
+      if (optionId !== currentQuestion.correctOption) {
+        return;
+      }
+
+      actions.selectQuizOption(optionId);
+      setMilestone2GuideStep(null);
+      return;
+    }
+
     actions.selectQuizOption(optionId);
+  }
+
+  function advanceMilestone2ChoiceGuide() {
+    setMilestone2GuideStep("choose");
   }
 
   function advanceToChoiceGuide() {
@@ -2208,7 +2685,7 @@ function AppShell({ selectedReward }) {
   }
 
   function handleMenuSelect(route) {
-    if (showAppGuide) {
+    if (isAppChromeLocked) {
       return;
     }
 
@@ -2238,24 +2715,28 @@ function AppShell({ selectedReward }) {
 
   return (
     <>
-      <div className="pandai-shell">
-        <header className="pandai-topbar">
+      <div className={`pandai-shell ${isMissionGuideActive ? "is-mission-guide-locked" : ""}`}>
+        <header
+          className={`pandai-topbar ${isQuizFocusMode || isMilestone2GuidedQuiz ? "is-quiz-focus-locked" : ""} ${
+            isMissionGuideActive ? "is-mission-guide-locked" : ""
+          }`}
+        >
           <div className="pandai-brand">
             <div className="pandai-brand__gem" aria-hidden="true" />
             <div className="pandai-brand__wordmark">Pandai</div>
           </div>
 
           <div className="pandai-actions">
-            <button type="button" className="pandai-icon-btn">
+            <button type="button" className="pandai-icon-btn" disabled={isQuizFocusMode || isMissionGuideActive}>
               S
             </button>
-            <button type="button" className="pandai-icon-btn">
+            <button type="button" className="pandai-icon-btn" disabled={isQuizFocusMode || isMissionGuideActive}>
               F
             </button>
-            <button type="button" className="pandai-icon-btn">
+            <button type="button" className="pandai-icon-btn" disabled={isQuizFocusMode || isMissionGuideActive}>
               N
             </button>
-            <button type="button" className="pandai-icon-btn">
+            <button type="button" className="pandai-icon-btn" disabled={isQuizFocusMode || isMissionGuideActive}>
               G
             </button>
             <div className="pandai-user-pill">
@@ -2269,10 +2750,17 @@ function AppShell({ selectedReward }) {
         </header>
 
         <main className="pandai-main">
-          <section className={`pandai-menu ${showAppGuide ? "is-locked" : ""}`}>
+          <section
+            className={`pandai-menu ${isAppChromeLocked ? "is-locked" : ""} ${
+              isQuizFocusMode && !isMilestone2GuidedQuiz ? "is-quiz-focus-locked" : ""
+            } ${isMissionGuideActive ? "is-mission-guide-locked" : ""} ${
+              activeMissionGuide?.focusArea === "navbar" ? "is-mission-guide-focus" : ""
+            }`}
+          >
             {TOP_MENU.map((item) => {
               const isMissionItem = item.id === "mission";
               const isMissionLocked = isMissionItem && !missionContext.hubUnlocked;
+              const isMissionGuideFocus = isMissionItem && activeMissionGuide?.focusArea === "navbar";
 
               return item.id === "learn" ? (
                 <div key={item.id} className="pandai-menu__dropdown" ref={learnMenuRef}>
@@ -2280,10 +2768,10 @@ function AppShell({ selectedReward }) {
                     type="button"
                     className={`pandai-menu__item ${
                       pageContext.route === item.id ? "is-active" : ""
-                    } ${learnMenuOpen ? "is-open" : ""}`}
+                    } ${showLearnDropdown ? "is-open" : ""}`}
                     aria-haspopup="menu"
-                    aria-expanded={learnMenuOpen}
-                    disabled={showAppGuide}
+                    aria-expanded={showLearnDropdown}
+                    disabled={isAppChromeLocked}
                     onClick={() => setLearnMenuOpen((prev) => !prev)}
                   >
                     <span className="pandai-menu__dot" aria-hidden="true" />
@@ -2293,7 +2781,7 @@ function AppShell({ selectedReward }) {
                     </span>
                   </button>
 
-                  {learnMenuOpen ? (
+                  {showLearnDropdown ? (
                     <div className="pandai-learn-dropdown" role="menu" aria-label="Learn menu">
                       {LEARN_MENU_ITEMS.map((learnItem) => (
                         <button
@@ -2320,8 +2808,10 @@ function AppShell({ selectedReward }) {
                   type="button"
                   className={`pandai-menu__item ${
                     pageContext.route === item.id ? "is-active" : ""
-                  } ${isMissionLocked ? "is-locked" : ""}`}
-                  disabled={showAppGuide || isMissionLocked}
+                  } ${isMissionLocked ? "is-locked" : ""} ${
+                    isMissionGuideFocus ? "is-guide-focus" : ""
+                  }`}
+                  disabled={isAppChromeLocked || isMissionLocked}
                   onClick={() => handleMenuSelect(item.id)}
                 >
                   <span className="pandai-menu__dot" aria-hidden="true" />
@@ -2364,9 +2854,11 @@ function AppShell({ selectedReward }) {
                   <div className="pandai-attempt-subject">
                     <button
                       type="button"
-                      className="pandai-attempt-back"
+                      className={`pandai-attempt-back ${
+                        isQuizFocusMode ? "is-quiz-focus-locked" : ""
+                      }`}
                       aria-label="Back to chapter list"
-                      disabled={showQuizAttemptGuide}
+                      disabled={showQuizAttemptGuide || isQuizFocusMode}
                       onClick={backToChapters}
                     >
                       ←
@@ -2412,7 +2904,50 @@ function AppShell({ selectedReward }) {
                 </div>
 
                 <article className="pandai-attempt-card">
-                  {showQuestionReadGuide ? (
+                  {showMilestone2ReadGuide ? (
+                    <div
+                      className="pandai-question-guide pandai-question-guide--milestone2"
+                      role="dialog"
+                      aria-labelledby="pandai-milestone2-read-guide-title"
+                    >
+                      <img
+                        src={pbotMascot}
+                        alt=""
+                        aria-hidden="true"
+                        className="pandai-question-guide__mascot"
+                      />
+                      <div className="pandai-question-guide__bubble">
+                        <h3 id="pandai-milestone2-read-guide-title">Read the question first 👇</h3>
+                        <p>
+                          Focus on the question and choices first. Lepas dah faham, tap next.
+                        </p>
+                        <button
+                          type="button"
+                          className="pandai-question-guide__next"
+                          onClick={advanceMilestone2ChoiceGuide}
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  ) : showMilestone2ChoiceGuide ? (
+                    <div
+                      className="pandai-question-guide pandai-question-guide--choices pandai-question-guide--milestone2-choice"
+                      role="dialog"
+                      aria-labelledby="pandai-milestone2-choice-guide-title"
+                    >
+                      <img
+                        src={pbotMascot}
+                        alt=""
+                        aria-hidden="true"
+                        className="pandai-question-guide__mascot"
+                      />
+                      <div className="pandai-question-guide__bubble">
+                        <h3 id="pandai-milestone2-choice-guide-title">Choose the correct answer</h3>
+                        <p>Untuk milestone ini, hanya jawapan betul boleh dipilih.</p>
+                      </div>
+                    </div>
+                  ) : showQuestionReadGuide ? (
                     <div
                       className="pandai-question-guide"
                       role="dialog"
@@ -2526,9 +3061,9 @@ function AppShell({ selectedReward }) {
 
                   <div className="pandai-attempt-grid">
                     <div
-                      ref={showQuestionReadGuide ? questionGuideRef : null}
+                      ref={showQuestionReadGuide || showMilestone2ReadGuide ? questionGuideRef : null}
                       className={`pandai-attempt-question ${
-                        showQuestionReadGuide ? "is-guide-focus" : ""
+                        showQuestionReadGuide || showMilestone2ReadGuide ? "is-guide-focus" : ""
                       }`}
                     >
                       <p className="pandai-attempt-equation">{currentQuestion.prompt}</p>
@@ -2547,15 +3082,19 @@ function AppShell({ selectedReward }) {
                     </div>
 
                     <div
-                      ref={showAnswerChoiceGuide ? choiceGuideRef : null}
+                      ref={showAnswerChoiceGuide || showMilestone2ChoiceGuide ? choiceGuideRef : null}
                       className={`pandai-attempt-choice-list ${
-                        showAnswerChoiceGuide ? "is-guide-focus" : ""
+                        showAnswerChoiceGuide || showMilestone2ChoiceGuide ? "is-guide-focus" : ""
                       }`}
                     >
                       {currentQuestion.options.map((choice) => {
                         const isSelected = quizContext.selectedOption === choice.id;
                         const isEliminated =
                           quizContext.eliminatedOptions.includes(choice.id) && !isSelected;
+                        const isMilestone2LockedChoice =
+                          isMilestone2GuidedQuiz &&
+                          !quizContext.saved &&
+                          choice.id !== currentQuestion.correctOption;
                         const isGuideAnswerFocus =
                           showCorrectAnswerGuide &&
                           choice.id === currentQuestion.correctOption;
@@ -2582,13 +3121,19 @@ function AppShell({ selectedReward }) {
                             } ${isEliminated ? "is-eliminated" : ""} ${
                               isCorrectChoice ? "is-correct" : ""
                             } ${isWrongChoice ? "is-wrong" : ""} ${
+                              isMilestone2LockedChoice ? "is-milestone2-locked" : ""
+                            } ${
                               isGuideAnswerFocus || isGuideWrongAnswerFocus ? "is-guide-answer" : ""
                             } ${isGuideSaveFocus ? "is-guide-save-answer" : ""}`}
                             disabled={
+                              showMilestone2ReadGuide ||
                               showQuestionReadGuide ||
                               showAnswerChoiceGuide ||
                               showSaveAnswerGuide ||
                               quizContext.isReviewingFinalSet ||
+                              (isMilestone2GuidedQuiz &&
+                                !quizContext.saved &&
+                                choice.id !== currentQuestion.correctOption) ||
                               (showCorrectAnswerGuide &&
                                 choice.id !== currentQuestion.correctOption) ||
                               (showWrongAnswerGuide && choice.id !== guidedWrongOptionId) ||
@@ -2717,6 +3262,8 @@ function AppShell({ selectedReward }) {
                         showSaveAnswerGuide ? "is-guide-focus" : ""
                       }`}
                       disabled={
+                        showMilestone2ReadGuide ||
+                        showMilestone2ChoiceGuide ||
                         showQuestionReadGuide ||
                         showAnswerChoiceGuide ||
                         showGuidedAnswerGuide ||
@@ -3168,7 +3715,14 @@ function AppShell({ selectedReward }) {
               onGoPractice={goPracticeFromBookmarks}
             />
           ) : showMissionHubView ? (
-            <MissionHubView selectedReward={selectedReward} missionContext={missionContext} />
+            <MissionHubView
+              selectedReward={selectedReward}
+              missionContext={missionContext}
+              missionGuide={activeMissionGuide}
+              onNextMissionGuideStep={advanceMissionGuideStep}
+              onSkipMissionGuide={skipMissionEntryPrompt}
+              onContinueMissionGuide={continueMissionEntryPrompt}
+            />
           ) : showAchievementView ? (
             <AchievementView onOpenSubject={openSubjectAnalysis} />
           ) : showPracticeAnalysisView ? (
@@ -3271,7 +3825,7 @@ function AppShell({ selectedReward }) {
           )}
         </main>
 
-        <footer className="pandai-footer">
+        <footer className={`pandai-footer ${isMissionGuideActive ? "is-mission-guide-locked" : ""}`}>
           <div>
             <span className="muted">Copyright 2026 </span>
             <Link to={APP_PATHS.app}>Pandai.org</Link>
@@ -3285,25 +3839,6 @@ function AppShell({ selectedReward }) {
           <div className="pandai-quiz-completion__scrim" aria-hidden="true" />
           <div className="pandai-quiz-completion__stage">
             <div
-              className="pandai-quiz-completion__coach"
-              role="note"
-              aria-labelledby="pandai-quiz-completion-coach-title"
-            >
-              <img
-                src={pbotMascot}
-                alt=""
-                aria-hidden="true"
-                className="pandai-question-guide__mascot pandai-quiz-completion__coach-mascot"
-              />
-              <div className="pandai-question-guide__bubble pandai-quiz-completion__coach-bubble">
-                <h3 id="pandai-quiz-completion-coach-title">{completionCoachTitle}</h3>
-                <p>{completionCoachSummary}</p>
-                <p className="pandai-quiz-completion__coach-rewards">{completionCoachRewardLine}</p>
-                <p className="pandai-quiz-completion__coach-prompt">{completionCoachPrompt}</p>
-              </div>
-            </div>
-
-            <div
               className="pandai-quiz-completion__dialog"
               role="dialog"
               aria-modal="true"
@@ -3313,7 +3848,8 @@ function AppShell({ selectedReward }) {
                 type="button"
                 className="pandai-quiz-completion__close"
                 aria-label="Close quiz completion summary"
-                disabled
+                disabled={isCompletionGuideActive}
+                onClick={closeQuizCompletionModal}
               >
                 ×
               </button>
@@ -3341,51 +3877,145 @@ function AppShell({ selectedReward }) {
               <h2 id="pandai-quiz-completion-title">{completionHeading}</h2>
               <p className="pandai-quiz-completion__message">{completionMessage}</p>
 
-              <div className="pandai-quiz-completion__stats" aria-label="Quiz summary">
-                <div className="pandai-quiz-completion__stat">
-                  <span className="pandai-quiz-completion__stat-icon" aria-hidden="true">
-                    🏅
-                  </span>
+              <div
+                className={`pandai-quiz-completion__stats ${
+                  isRewardCompletionGuideStep ? `is-guide-active is-step-${completionGuideStep}` : ""
+                }`}
+                aria-label="Quiz summary"
+              >
+                <div
+                  className={`pandai-quiz-completion__stat ${
+                    isRewardCompletionGuideStep && completionGuideStep === 0 ? "is-guide-active" : ""
+                  } ${
+                    isRewardCompletionGuideStep && completionGuideStep !== 0
+                      ? "is-guide-dimmed"
+                      : ""
+                  }`}
+                >
+                  <img
+                    src={completionScoreIcon}
+                    alt=""
+                    aria-hidden="true"
+                    className="pandai-quiz-completion__stat-icon pandai-quiz-completion__stat-icon--score"
+                  />
                   <strong>+ {quizContext.correctCount}</strong>
                 </div>
-                <div className="pandai-quiz-completion__stat">
-                  <span className="pandai-quiz-completion__stat-icon" aria-hidden="true">
-                    🪙
-                  </span>
+                <div
+                  className={`pandai-quiz-completion__stat ${
+                    isRewardCompletionGuideStep && completionGuideStep === 1 ? "is-guide-active" : ""
+                  } ${
+                    isRewardCompletionGuideStep && completionGuideStep !== 1
+                      ? "is-guide-dimmed"
+                      : ""
+                  }`}
+                >
+                  <img
+                    src={completionCoinIcon}
+                    alt=""
+                    aria-hidden="true"
+                    className="pandai-quiz-completion__stat-icon pandai-quiz-completion__stat-icon--coin"
+                  />
                   <strong>+ {completionCoinReward}</strong>
                 </div>
-                <div className="pandai-quiz-completion__stat is-negative">
-                  <span className="pandai-quiz-completion__stat-icon" aria-hidden="true">
-                    ❤
-                  </span>
+                <div
+                  className={`pandai-quiz-completion__stat is-negative ${
+                    isRewardCompletionGuideStep && completionGuideStep === 2 ? "is-guide-active" : ""
+                  } ${
+                    isRewardCompletionGuideStep && completionGuideStep !== 2
+                      ? "is-guide-dimmed"
+                      : ""
+                  }`}
+                >
+                  <img
+                    src={completionHeartIcon}
+                    alt=""
+                    aria-hidden="true"
+                    className="pandai-quiz-completion__stat-icon pandai-quiz-completion__stat-icon--heart"
+                  />
                   <strong>{completionHeartDelta}</strong>
                 </div>
+
+                {isRewardCompletionGuideStep && completionGuideCopy ? (
+                  <div
+                    className={`pandai-quiz-completion__guide is-step-${completionGuideStep}`}
+                    role="note"
+                    aria-labelledby="pandai-quiz-completion-guide-title"
+                  >
+                    <img
+                      src={pbotMascot}
+                      alt=""
+                      aria-hidden="true"
+                      className="pandai-question-guide__mascot pandai-quiz-completion__guide-mascot"
+                    />
+                    <div className="pandai-question-guide__bubble pandai-quiz-completion__guide-bubble">
+                      <h3 id="pandai-quiz-completion-guide-title">{completionGuideCopy.title}</h3>
+                      <p>{completionGuideCopy.body}</p>
+                      {completionGuideCopy.cta ? (
+                        <button
+                          type="button"
+                          className="pandai-question-guide__next"
+                          autoFocus
+                          onClick={advanceQuizCompletionGuide}
+                        >
+                          {completionGuideCopy.cta}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
-              <div className="pandai-quiz-completion__actions">
+              <div
+                className={`pandai-quiz-completion__actions ${
+                  isPracticeCompletionGuideStep ? "is-practice-guided" : ""
+                }`}
+              >
                 <button
                   type="button"
                   className="pandai-quiz-completion__btn pandai-quiz-completion__btn--ghost"
-                  disabled
+                  disabled={isCompletionGuideActive || !nextTopic}
                   onClick={startNextTopicQuiz}
                 >
                   Next topic {nextTopic ? "🪙" : ""}
                 </button>
-                <button
-                  type="button"
-                  className="pandai-quiz-completion__btn pandai-quiz-completion__btn--solid is-guide-focus"
-                  autoFocus
-                  onClick={practiceNewSet}
-                >
-                  Practise new set
-                </button>
+                <div className="pandai-quiz-completion__practice-wrap">
+                  {isPracticeCompletionGuideStep && completionGuideCopy ? (
+                    <div
+                      className="pandai-quiz-completion__practice-guide"
+                      role="note"
+                      aria-labelledby="pandai-quiz-completion-practice-guide-title"
+                    >
+                      <img
+                        src={pbotMascot}
+                        alt=""
+                        aria-hidden="true"
+                        className="pandai-question-guide__mascot pandai-quiz-completion__practice-guide-mascot"
+                      />
+                      <div className="pandai-question-guide__bubble pandai-quiz-completion__guide-bubble pandai-quiz-completion__practice-guide-bubble">
+                        <h3 id="pandai-quiz-completion-practice-guide-title">
+                          {completionGuideCopy.title}
+                        </h3>
+                        <p>{completionGuideCopy.body}</p>
+                      </div>
+                    </div>
+                  ) : null}
+                  <button
+                    type="button"
+                    ref={practiceNewSetButtonRef}
+                    className={`pandai-quiz-completion__btn pandai-quiz-completion__btn--solid ${
+                      isPracticeCompletionGuideStep || !isCompletionGuideActive
+                        ? "is-guide-focus"
+                        : ""
+                    }`}
+                    disabled={isCompletionGuideActive && !isPracticeCompletionGuideStep}
+                    onClick={practiceNewSet}
+                  >
+                    Practise new set
+                  </button>
+                </div>
               </div>
 
-              <p className="pandai-quiz-completion__note">
-                {submittedOnLabel
-                  ? `Submitted on ${submittedOnLabel} • ${quizContext.correctCount} correct • ${incorrectCount} incorrect • ${scorePercent}%`
-                  : `${quizContext.correctCount} correct • ${incorrectCount} incorrect • ${scorePercent}%`}
-              </p>
+              <p className="pandai-quiz-completion__note">{completionUnlockNote}</p>
             </div>
           </div>
         </div>
@@ -3395,8 +4025,26 @@ function AppShell({ selectedReward }) {
 }
 
 export default function App() {
-  const [onboardingProfile, setOnboardingProfile] = useState(createEmptyOnboardingProfile);
+  const [onboardingProfile, setOnboardingProfile] = useState(createInitialOnboardingProfile);
   const [onboardingSessionId] = useState(createOnboardingSessionId);
+
+  useEffect(() => {
+    if (onboardingProfile.preferredLanguage) {
+      persistPreferredLanguage(onboardingProfile.preferredLanguage);
+    }
+
+    if (onboardingProfile.learnerName) {
+      persistLearnerName(onboardingProfile.learnerName);
+    }
+
+    if (onboardingProfile.selectedReward) {
+      persistSelectedReward(onboardingProfile.selectedReward);
+    }
+  }, [
+    onboardingProfile.learnerName,
+    onboardingProfile.preferredLanguage,
+    onboardingProfile.selectedReward,
+  ]);
 
   return (
     <Routes>
@@ -3431,6 +4079,15 @@ export default function App() {
       <Route
         path={APP_PATHS.onboardingMission}
         element={<PrototypeMissionPage onboardingProfile={onboardingProfile} />}
+      />
+      <Route
+        path={APP_PATHS.missionHub}
+        element={
+          <PrototypeAppPage
+            onboardingProfile={onboardingProfile}
+            initialRoute="mission"
+          />
+        }
       />
       <Route
         path={`${APP_PATHS.app}/*`}

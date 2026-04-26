@@ -140,6 +140,7 @@ function getQuestionByIndex(index) {
 function createQuizContext() {
   return {
     inProgress: false,
+    guideMode: null,
     currentIndex: 0,
     total: 5,
     answeredCount: 0,
@@ -160,6 +161,8 @@ function createMissionContext() {
   return {
     hubUnlocked: false,
     hasViewedHub: false,
+    hasCompletedPracticeMissionGuide: false,
+    hasCompletedMilestone2Guide: false,
     activeMissionId: STARTER_MISSION_ID,
     completedMilestoneIds: [],
   };
@@ -380,6 +383,7 @@ function reducer(state, action) {
         quizContext: {
           ...createQuizContext(),
           inProgress: true,
+          guideMode: action.guideMode || null,
           total: clampQuizTotal(action.total),
         },
       };
@@ -552,7 +556,12 @@ function reducer(state, action) {
           mode: getModeFromRoute("practice"),
         },
         quizContext: createQuizContext(),
-        missionContext: unlockMissionContext(state.missionContext),
+        missionContext: {
+          ...unlockMissionContext(state.missionContext),
+          hasCompletedMilestone2Guide:
+            state.missionContext.hasCompletedMilestone2Guide ||
+            state.quizContext.guideMode === "milestone2",
+        },
       };
     }
     case "set_topic_picker_highlight": {
@@ -587,6 +596,15 @@ function reducer(state, action) {
         missionContext: {
           ...unlockMissionContext(state.missionContext),
           hasViewedHub: true,
+        },
+      };
+    }
+    case "complete_practice_mission_guide": {
+      return {
+        ...state,
+        missionContext: {
+          ...state.missionContext,
+          hasCompletedPracticeMissionGuide: true,
         },
       };
     }
@@ -746,6 +764,7 @@ export function PBotContextProvider({ children, profile }) {
             type: "start_quiz",
             topic: payload.topic,
             total: payload.total,
+            guideMode: payload.guideMode,
           }),
         stopQuiz: () => dispatch({ type: "stop_quiz" }),
         selectQuizOption: (option) =>
@@ -808,6 +827,8 @@ export function PBotContextProvider({ children, profile }) {
           dispatch({ type: "set_quiz_eliminated_options", options: [] }),
         unlockMissionHub: () => dispatch({ type: "unlock_mission_hub" }),
         openMissionHub: () => dispatch({ type: "open_mission_hub" }),
+        completePracticeMissionGuide: () =>
+          dispatch({ type: "complete_practice_mission_guide" }),
         requestTopicPickerFocus: () => {
           dispatch({ type: "set_topic_picker_highlight", highlighted: true });
           setTimeout(() => {

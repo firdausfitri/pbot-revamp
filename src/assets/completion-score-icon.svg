@@ -1,0 +1,35 @@
+<svg width="72" height="72" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="cupFill" x1="36" y1="6" x2="36" y2="34" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F3D27A"/>
+      <stop offset="1" stop-color="#D7A94D"/>
+    </linearGradient>
+    <linearGradient id="stemFill" x1="36" y1="31" x2="36" y2="50" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F2D371"/>
+      <stop offset="1" stop-color="#BE8E2D"/>
+    </linearGradient>
+    <linearGradient id="baseFill" x1="17" y1="45" x2="51" y2="66" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4B5A77"/>
+      <stop offset="1" stop-color="#222B3F"/>
+    </linearGradient>
+    <linearGradient id="baseFace" x1="51" y1="48" x2="64" y2="61" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#D9E0E9"/>
+    </linearGradient>
+    <filter id="glow" x="0" y="0" width="72" height="72" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="1.1"/>
+    </filter>
+  </defs>
+  <g filter="url(#glow)">
+    <ellipse cx="35.5" cy="15.5" rx="17.5" ry="10.5" fill="#F6D67D"/>
+    <path d="M18 14.8C18 9.39 25.84 5 35.5 5C45.16 5 53 9.39 53 14.8V23.8C53 32.75 45.16 40 35.5 40C25.84 40 18 32.75 18 23.8V14.8Z" fill="url(#cupFill)"/>
+    <ellipse cx="35.5" cy="15.4" rx="14.4" ry="7.4" fill="#C9953D"/>
+    <path d="M27 33.5L35.5 28.5L44 33.5L39.6 46.5H31.4L27 33.5Z" fill="url(#stemFill)"/>
+    <path d="M35.5 28.5L39.6 46.5H31.4L35.5 28.5Z" fill="#F3D278"/>
+    <path d="M18.5 46L35.2 39.7L51.8 46.2L48.2 60.1H22L18.5 46Z" fill="url(#baseFill)"/>
+    <path d="M51.8 46.2L63.5 50.6L60.6 63.4L48.2 60.1L51.8 46.2Z" fill="url(#baseFace)"/>
+    <path d="M18.5 46L22 60.1L9.8 54.7L14 42.4L18.5 46Z" fill="#2C354A"/>
+    <path d="M22 60.1H48.2L60.6 63.4H34.2L22 60.1Z" fill="#1B2233"/>
+  </g>
+</svg>

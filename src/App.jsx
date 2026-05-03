@@ -18,11 +18,13 @@ import {
   normalizeLearnerName,
   persistLearnerName,
   persistMilestone2PostReviewGuideComplete,
+  persistMilestone3ProgressStage,
   persistMilestone3TopicGuideComplete,
   persistPreferredLanguage,
   persistSelectedReward,
   readLearnerName,
   readMilestone2PostReviewGuideComplete,
+  readMilestone3ProgressStage,
   readMilestone3TopicGuideComplete,
   readPreferredLanguage,
   readSelectedReward,
@@ -44,6 +46,7 @@ const TOP_MENU = [
 ];
 
 const QUIZ_STAR_THRESHOLDS = [33.33, 66.67, 100];
+const GUIDED_QUIZ_MODES = new Set(["milestone2", "milestone3-set3", "milestone3-set4"]);
 const SECOND_GUIDED_QUESTION_INDEX = 1;
 const SECOND_GUIDED_WRONG_OPTION_ID = "C";
 const THIRD_GUIDED_QUESTION_INDEX = 2;
@@ -51,17 +54,94 @@ const ENGLISH_ORDINALS = ["first", "second", "third", "fourth", "fifth"];
 const READ_GUIDE_LOCK_MS = 2000;
 const QUIZ_COMPLETION_GUIDE_BASE_STEPS = ["points", "coin"];
 const QUIZ_COMPLETION_GUIDE_TRAILING_STEPS = ["practice"];
-const MILESTONE2_POST_QUIZ_SET_SUMMARY = [
-  { id: "set-3", label: "Set 3", stars: 0, status: "available" },
-  { id: "set-2", label: "Set 2", stars: 3, status: "completed" },
-  { id: "set-1", label: "Set 1", stars: 2, status: "completed" },
-];
+const MILESTONE3_PROGRESS_STAGE = {
+  NOT_STARTED: "not-started",
+  INTRO_STARS: "intro-stars",
+  SET3_READY: "set-3-ready",
+  SET3_IN_PROGRESS: "set-3-in-progress",
+  SET4_READY: "set-4-ready",
+  SET4_IN_PROGRESS: "set-4-in-progress",
+  SET4_COMPLETION_NOTE: "set-4-completion-note",
+  WAITING_CLOSE_AFTER_SET4: "waiting-close-after-set4",
+  WAITING_BACK_TO_QUIZ_AFTER_SET4: "waiting-back-to-quiz-after-set4",
+  POST_SET4_STARS_11: "post-set4-stars-11",
+  POST_SET4_NEED_12: "post-set4-need-12",
+  POST_SET4_REDO_SET1: "post-set4-redo-set1",
+  COMPLETE: "complete",
+};
+
+function buildMilestonePostQuizSetSummary(progressStage) {
+  const hasSet3Completed =
+    progressStage === MILESTONE3_PROGRESS_STAGE.SET4_READY ||
+    progressStage === MILESTONE3_PROGRESS_STAGE.SET4_IN_PROGRESS ||
+    progressStage === MILESTONE3_PROGRESS_STAGE.POST_SET4_STARS_11 ||
+    progressStage === MILESTONE3_PROGRESS_STAGE.POST_SET4_NEED_12 ||
+    progressStage === MILESTONE3_PROGRESS_STAGE.POST_SET4_REDO_SET1 ||
+    progressStage === MILESTONE3_PROGRESS_STAGE.COMPLETE;
+  const hasSet4Unlocked =
+    progressStage === MILESTONE3_PROGRESS_STAGE.SET4_READY ||
+    progressStage === MILESTONE3_PROGRESS_STAGE.SET4_IN_PROGRESS ||
+    progressStage === MILESTONE3_PROGRESS_STAGE.POST_SET4_STARS_11 ||
+    progressStage === MILESTONE3_PROGRESS_STAGE.POST_SET4_NEED_12 ||
+    progressStage === MILESTONE3_PROGRESS_STAGE.POST_SET4_REDO_SET1 ||
+    progressStage === MILESTONE3_PROGRESS_STAGE.COMPLETE;
+  const hasSet4Completed =
+    progressStage === MILESTONE3_PROGRESS_STAGE.POST_SET4_STARS_11 ||
+    progressStage === MILESTONE3_PROGRESS_STAGE.POST_SET4_NEED_12 ||
+    progressStage === MILESTONE3_PROGRESS_STAGE.POST_SET4_REDO_SET1 ||
+    progressStage === MILESTONE3_PROGRESS_STAGE.COMPLETE;
+
+  const summary = [
+    {
+      id: "set-3",
+      label: "Set 3",
+      stars: hasSet3Completed ? 3 : 0,
+      status: hasSet3Completed ? "completed" : "available",
+    },
+    { id: "set-2", label: "Set 2", stars: 3, status: "completed" },
+    { id: "set-1", label: "Set 1", stars: 2, status: "completed" },
+  ];
+
+  if (hasSet3Completed) {
+    summary.unshift({
+      id: "set-4",
+      label: "Set 4",
+      stars: hasSet4Completed ? 3 : 0,
+      status: hasSet4Completed ? "completed" : hasSet4Unlocked ? "available" : "locked",
+    });
+  }
+
+  return summary;
+}
+
+function getMilestonePostQuizStarTotal(progressStage) {
+  return buildMilestonePostQuizSetSummary(progressStage).reduce(
+    (total, setItem) => total + setItem.stars,
+    0,
+  );
+}
+
+function getGuidedSetLabel(guideMode) {
+  if (guideMode === "milestone3-set3") {
+    return "Set 3";
+  }
+
+  if (guideMode === "milestone3-set4") {
+    return "Set 4";
+  }
+
+  return "Set 2";
+}
 
 function getQuizCompletionGuideSteps(incorrectCount, guideMode) {
+  const includePracticeStep =
+    guideMode !== "milestone2" && guideMode !== "milestone3-set4";
+
   return [
     ...QUIZ_COMPLETION_GUIDE_BASE_STEPS,
     ...(incorrectCount > 0 ? ["life"] : []),
-    ...(guideMode === "milestone2" ? [] : QUIZ_COMPLETION_GUIDE_TRAILING_STEPS),
+    ...(guideMode === "milestone3-set4" ? ["unlock-note"] : []),
+    ...(includePracticeStep ? QUIZ_COMPLETION_GUIDE_TRAILING_STEPS : []),
   ];
 }
 
@@ -93,7 +173,7 @@ function formatSubmissionDate(dateValue) {
   }).format(new Date(dateValue));
 }
 
-function getQuizCompletionGuideCopy({ stepKey, correctCount, coinReward, incorrectCount }) {
+function getQuizCompletionGuideCopy({ stepKey, correctCount, coinReward, incorrectCount, guideMode }) {
   if (stepKey === "points") {
     return {
       title: "Points added",
@@ -119,8 +199,19 @@ function getQuizCompletionGuideCopy({ stepKey, correctCount, coinReward, incorre
   if (stepKey === "practice") {
     return {
       title: "Keep going 👇",
-      body: "Tap Practise new set to continue 🚀",
+      body:
+        guideMode === "milestone3-set3"
+          ? "Tap Practise new set to continue to Set 4 🚀"
+          : "Tap Practise new set to continue 🚀",
       cta: null,
+    };
+  }
+
+  if (stepKey === "unlock-note") {
+    return {
+      title: "Nice progress!",
+      body: "Look at the green note below. It shows what you need to unlock the next topic for free.",
+      cta: "Next",
     };
   }
 
@@ -357,9 +448,8 @@ function getNextMathTopic(currentTopic) {
 const FIRST_GUIDED_CHAPTER_ID = "chapter-functions";
 const INTERNAL_JUMP_TARGETS = [
   { id: "milestone-1", label: "Milestone 1" },
-  { id: "mission-hub", label: "Mission Hub" },
   { id: "milestone-2", label: "Milestone 2" },
-  { id: "milestone-2-review", label: "Back to Quiz" },
+  { id: "milestone-3", label: "Milestone 3" },
 ];
 
 const RECENT_ACTIVITIES = [
@@ -1729,6 +1819,8 @@ function AppShell({
   const milestone2PostReviewSet1Ref = useRef(null);
   const milestone2PostReviewSet2Ref = useRef(null);
   const milestone2PostReviewSet3ButtonRef = useRef(null);
+  const milestone3PostReviewSet4ButtonRef = useRef(null);
+  const milestone3Set1RetryGuideRef = useRef(null);
   const initialRouteHandledRef = useRef(false);
   const internalGuideJumpCountRef = useRef(0);
   const homeGuideKey = location.state?.showHomeGuide ? location.key : null;
@@ -1749,7 +1841,13 @@ function AppShell({
   const [hasCompletedMilestone3TopicGuide, setHasCompletedMilestone3TopicGuide] = useState(() =>
     readMilestone3TopicGuideComplete(false),
   );
-  const [pendingMilestone3TopicGuideEntry, setPendingMilestone3TopicGuideEntry] = useState(false);
+  const [milestone3ProgressStage, setMilestone3ProgressStageState] = useState(() =>
+    readMilestone3ProgressStage(
+      readMilestone3TopicGuideComplete(false)
+        ? MILESTONE3_PROGRESS_STAGE.COMPLETE
+        : MILESTONE3_PROGRESS_STAGE.NOT_STARTED,
+    ),
+  );
   const [missionGuideStep, setMissionGuideStep] = useState(null);
   const [missionGuideVariant, setMissionGuideVariant] = useState(null);
   const [milestone2GuideStep, setMilestone2GuideStep] = useState(null);
@@ -1848,9 +1946,18 @@ function AppShell({
           showSkip: true,
         }
       : null;
+  const milestonePostQuizSetSummary = useMemo(
+    () => buildMilestonePostQuizSetSummary(milestone3ProgressStage),
+    [milestone3ProgressStage],
+  );
+  const milestonePostQuizStarTotal = useMemo(
+    () => getMilestonePostQuizStarTotal(milestone3ProgressStage),
+    [milestone3ProgressStage],
+  );
   const currentQuestion = quizContext.currentQuestion;
+  const currentGuidedSetLabel = getGuidedSetLabel(quizContext.guideMode);
   const isMilestone2GuidedQuiz =
-    showQuizAttempt && quizContext.guideMode === "milestone2";
+    showQuizAttempt && GUIDED_QUIZ_MODES.has(quizContext.guideMode);
   const showMilestone2PostQuizTopicReview =
     showMilestone2TopicReview &&
     showQuizWorkspace &&
@@ -1870,9 +1977,20 @@ function AppShell({
   const showMilestone3TopicStarsGuide =
     showMilestone2PostQuizTopicReview && milestone3TopicGuideStep === "topic-stars";
   const showMilestone3TopicStartGuide =
-    showMilestone2PostQuizTopicReview && milestone3TopicGuideStep === "set-3-start";
+    showMilestone2PostQuizTopicReview &&
+    (milestone3TopicGuideStep === "set-3-start" || milestone3TopicGuideStep === "set-4-start");
+  const showMilestone3Stars11Guide =
+    showMilestone2PostQuizTopicReview && milestone3TopicGuideStep === "stars-11";
+  const showMilestone3Need12Guide =
+    showMilestone2PostQuizTopicReview && milestone3TopicGuideStep === "need-12";
+  const showMilestone3RedoSet1Guide =
+    showMilestone2PostQuizTopicReview && milestone3TopicGuideStep === "redo-set-1";
   const showMilestone3TopicGuide =
-    showMilestone3TopicStarsGuide || showMilestone3TopicStartGuide;
+    showMilestone3TopicStarsGuide ||
+    showMilestone3TopicStartGuide ||
+    showMilestone3Stars11Guide ||
+    showMilestone3Need12Guide ||
+    showMilestone3RedoSet1Guide;
   const displayQuestionIndex = quizContext.displayIndex ?? quizContext.currentIndex;
   const questionNumber = Math.min(displayQuestionIndex + 1, quizContext.total);
   const questionProgress = `${questionNumber} / ${quizContext.total}`;
@@ -1923,12 +2041,13 @@ function AppShell({
   const completionGuideStepKey =
     completionGuideSteps[completionGuideStep] || null;
   const isPracticeCompletionGuideStep = completionGuideStepKey === "practice";
-  const disableMilestone2CompletionActions = quizContext.guideMode === "milestone2";
+  const disableMilestone2CompletionActions =
+    quizContext.guideMode === "milestone2" || quizContext.guideMode === "milestone3-set4";
   const isRewardCompletionGuideStep =
     isCompletionGuideActive && !isPracticeCompletionGuideStep;
   const showMilestone2CompletionCloseGuide =
     showQuizCompletionModal &&
-    quizContext.guideMode === "milestone2" &&
+    (quizContext.guideMode === "milestone2" || quizContext.guideMode === "milestone3-set4") &&
     milestone2CompletionExitStep === "close";
   const showMilestone2BackToQuizGuide =
     !showQuizCompletionModal &&
@@ -1940,6 +2059,7 @@ function AppShell({
         correctCount: quizContext.correctCount,
         coinReward: completionCoinReward,
         incorrectCount,
+        guideMode: quizContext.guideMode,
       })
     : null;
   const completionUnlockNote = nextTopic
@@ -1973,7 +2093,7 @@ function AppShell({
     !quizContext.selectedOption &&
     milestone2GuideStep === "choose";
   const showMilestone2ProgressGuide =
-    isMilestone2GuidedQuiz &&
+    quizContext.guideMode === "milestone2" &&
     quizContext.currentIndex === THIRD_GUIDED_QUESTION_INDEX &&
     quizContext.saved &&
     quizContext.isCorrect &&
@@ -2184,6 +2304,11 @@ function AppShell({
     ? "Tap Start to begin the next available set in this chapter."
     : "This page shows the chapters in your selected subject. Open the first chapter to see available topics.";
 
+  function setMilestone3ProgressStage(stage) {
+    setMilestone3ProgressStageState(stage);
+    persistMilestone3ProgressStage(stage);
+  }
+
   useEffect(() => {
     if (initialRouteHandledRef.current) {
       return;
@@ -2387,10 +2512,13 @@ function AppShell({
       const resetPostReviewGuideTimeout = window.setTimeout(() => {
         setMilestone2PostReviewGuideStep(null);
         setMilestone3TopicGuideStep(null);
-        setPendingMilestone3TopicGuideEntry(false);
       }, 0);
 
       return () => window.clearTimeout(resetPostReviewGuideTimeout);
+    }
+
+    if (milestone3ProgressStage !== MILESTONE3_PROGRESS_STAGE.NOT_STARTED) {
+      return undefined;
     }
 
     if (!hasCompletedMilestone2PostReviewGuide && !milestone2PostReviewGuideStep) {
@@ -2404,6 +2532,7 @@ function AppShell({
     return undefined;
   }, [
     hasCompletedMilestone2PostReviewGuide,
+    milestone3ProgressStage,
     milestone2PostReviewGuideStep,
     showMilestone2PostQuizTopicReview,
   ]);
@@ -2413,13 +2542,21 @@ function AppShell({
       return undefined;
     }
 
-    if (
-      pendingMilestone3TopicGuideEntry &&
-      !hasCompletedMilestone3TopicGuide &&
-      !milestone3TopicGuideStep
-    ) {
+    if (!milestone3TopicGuideStep) {
       const startMilestone3TopicGuideTimeout = window.setTimeout(() => {
-        setMilestone3TopicGuideStep("topic-stars");
+        if (milestone3ProgressStage === MILESTONE3_PROGRESS_STAGE.INTRO_STARS) {
+          setMilestone3TopicGuideStep("topic-stars");
+        } else if (milestone3ProgressStage === MILESTONE3_PROGRESS_STAGE.SET3_READY) {
+          setMilestone3TopicGuideStep("set-3-start");
+        } else if (milestone3ProgressStage === MILESTONE3_PROGRESS_STAGE.SET4_READY) {
+          setMilestone3TopicGuideStep("set-4-start");
+        } else if (milestone3ProgressStage === MILESTONE3_PROGRESS_STAGE.POST_SET4_STARS_11) {
+          setMilestone3TopicGuideStep("stars-11");
+        } else if (milestone3ProgressStage === MILESTONE3_PROGRESS_STAGE.POST_SET4_NEED_12) {
+          setMilestone3TopicGuideStep("need-12");
+        } else if (milestone3ProgressStage === MILESTONE3_PROGRESS_STAGE.POST_SET4_REDO_SET1) {
+          setMilestone3TopicGuideStep("redo-set-1");
+        }
       }, 0);
 
       return () => window.clearTimeout(startMilestone3TopicGuideTimeout);
@@ -2427,9 +2564,8 @@ function AppShell({
 
     return undefined;
   }, [
-    hasCompletedMilestone3TopicGuide,
     milestone3TopicGuideStep,
-    pendingMilestone3TopicGuideEntry,
+    milestone3ProgressStage,
     showMilestone2PostQuizTopicReview,
     showMilestone2PostReviewGuide,
   ]);
@@ -2460,9 +2596,15 @@ function AppShell({
   useEffect(() => {
     const guideAnchor = showMilestone3TopicStarsGuide
       ? milestone3TopicStarsRef.current
-      : showMilestone3TopicStartGuide
-        ? milestone2PostReviewSet3ButtonRef.current
-        : null;
+      : showMilestone3TopicStartGuide && milestone3TopicGuideStep === "set-4-start"
+        ? milestone3PostReviewSet4ButtonRef.current
+        : showMilestone3TopicStartGuide
+          ? milestone2PostReviewSet3ButtonRef.current
+          : showMilestone3RedoSet1Guide
+            ? milestone3Set1RetryGuideRef.current
+            : showMilestone3Stars11Guide || showMilestone3Need12Guide
+              ? milestone3TopicStarsRef.current
+              : null;
 
     if (!guideAnchor) {
       return;
@@ -2472,7 +2614,72 @@ function AppShell({
     if ("focus" in guideAnchor) {
       guideAnchor.focus({ preventScroll: true });
     }
-  }, [showMilestone3TopicStarsGuide, showMilestone3TopicStartGuide]);
+  }, [
+    milestone3TopicGuideStep,
+    showMilestone3Need12Guide,
+    showMilestone3RedoSet1Guide,
+    showMilestone3Stars11Guide,
+    showMilestone3TopicStarsGuide,
+    showMilestone3TopicStartGuide,
+  ]);
+
+  useEffect(() => {
+    if (milestone3ProgressStage === MILESTONE3_PROGRESS_STAGE.NOT_STARTED) {
+      return;
+    }
+
+    if (milestone3ProgressStage === MILESTONE3_PROGRESS_STAGE.COMPLETE) {
+      return;
+    }
+
+    if (
+      milestone3ProgressStage === MILESTONE3_PROGRESS_STAGE.SET3_IN_PROGRESS ||
+      milestone3ProgressStage === MILESTONE3_PROGRESS_STAGE.SET4_IN_PROGRESS
+    ) {
+      if (quizContext.inProgress || pageContext.route === "mission") {
+        return;
+      }
+
+      setShowMilestone2TopicReview(false);
+      setExpandedChapterId(FIRST_GUIDED_CHAPTER_ID);
+      actions.setSelectedSubject("Mathematics");
+      actions.setSelectedTopic("Functions");
+      actions.startQuiz({
+        topic: "Functions",
+        total: 5,
+        guideMode:
+          milestone3ProgressStage === MILESTONE3_PROGRESS_STAGE.SET3_IN_PROGRESS
+            ? "milestone3-set3"
+            : "milestone3-set4",
+      });
+      return;
+    }
+
+    if (
+      milestone3ProgressStage === MILESTONE3_PROGRESS_STAGE.SET4_COMPLETION_NOTE ||
+      milestone3ProgressStage === MILESTONE3_PROGRESS_STAGE.WAITING_CLOSE_AFTER_SET4 ||
+      milestone3ProgressStage === MILESTONE3_PROGRESS_STAGE.WAITING_BACK_TO_QUIZ_AFTER_SET4
+    ) {
+      return;
+    }
+
+    if (pageContext.route === "mission" || showMilestone2PostQuizTopicReview) {
+      return;
+    }
+
+    setShowMilestone2TopicReview(true);
+    setExpandedChapterId(FIRST_GUIDED_CHAPTER_ID);
+    actions.setSelectedSubject("Mathematics");
+    actions.setSelectedTopic("Functions");
+    actions.setRoute("quiz");
+    actions.stopQuiz();
+  }, [
+    actions,
+    milestone3ProgressStage,
+    pageContext.route,
+    quizContext.inProgress,
+    showMilestone2PostQuizTopicReview,
+  ]);
 
   useEffect(() => {
     if (pageContext.route === "mission") {
@@ -2708,7 +2915,12 @@ function AppShell({
     setLearnMenuOpen(false);
     setShowMilestone2TopicReview(false);
     setOnboardingGuideStep(showTopicStartGuide ? "question" : null);
-    setMilestone2GuideStep(options.guideMode === "milestone2" ? "intro" : null);
+    setMilestone2GuideStep(GUIDED_QUIZ_MODES.has(options.guideMode) ? "intro" : null);
+    if (options.guideMode === "milestone3-set3") {
+      setMilestone3ProgressStage(MILESTONE3_PROGRESS_STAGE.SET3_IN_PROGRESS);
+    } else if (options.guideMode === "milestone3-set4") {
+      setMilestone3ProgressStage(MILESTONE3_PROGRESS_STAGE.SET4_IN_PROGRESS);
+    }
     actions.setSelectedTopic(topic);
     actions.startQuiz({ topic, total, guideMode: options.guideMode });
   }
@@ -2754,7 +2966,8 @@ function AppShell({
 
     if (isMilestone2GuidedQuiz) {
       setMilestone2GuideStep(
-        quizContext.currentIndex === THIRD_GUIDED_QUESTION_INDEX
+        quizContext.guideMode === "milestone2" &&
+          quizContext.currentIndex === THIRD_GUIDED_QUESTION_INDEX
           ? "progress"
           : isFinalQuizQuestion && quizContext.correctCount === quizContext.total - 1
             ? "final-progress"
@@ -2784,6 +2997,9 @@ function AppShell({
     if (!missionContext.hubUnlocked) {
       actions.unlockMissionHub();
     }
+    if (quizContext.guideMode === "milestone3-set4") {
+      setMilestone3ProgressStage(MILESTONE3_PROGRESS_STAGE.SET4_COMPLETION_NOTE);
+    }
     setQuizCompletionModal({
       submittedAt: new Date().toISOString(),
       quizKey: activeQuizCompletionKey,
@@ -2792,6 +3008,9 @@ function AppShell({
 
   function closeQuizCompletionModal() {
     if (showMilestone2CompletionCloseGuide) {
+      if (quizContext.guideMode === "milestone3-set4") {
+        setMilestone3ProgressStage(MILESTONE3_PROGRESS_STAGE.WAITING_BACK_TO_QUIZ_AFTER_SET4);
+      }
       setMilestone2CompletionExitStep("back");
     } else {
       setMilestone2CompletionExitStep(null);
@@ -2815,6 +3034,14 @@ function AppShell({
         }, 0);
         return;
       }
+      if (quizContext.guideMode === "milestone3-set4") {
+        setMilestone3ProgressStage(MILESTONE3_PROGRESS_STAGE.WAITING_CLOSE_AFTER_SET4);
+        setMilestone2CompletionExitStep("close");
+        window.setTimeout(() => {
+          completionCloseButtonRef.current?.focus();
+        }, 0);
+        return;
+      }
       window.setTimeout(() => {
         practiceNewSetButtonRef.current?.focus();
       }, 0);
@@ -2832,6 +3059,13 @@ function AppShell({
   function practiceNewSet() {
     setMilestone2CompletionExitStep(null);
     closeQuizCompletionModal();
+    if (quizContext.guideMode === "milestone3-set3") {
+      startTopicQuiz(pageContext.selectedTopic || "Functions", quizContext.total, {
+        guideMode: "milestone3-set4",
+      });
+      return;
+    }
+
     if (missionContext.hasCompletedPracticeMissionGuide || !currentMissionMilestone) {
       startTopicQuiz(pageContext.selectedTopic || "Functions", quizContext.total);
       return;
@@ -2885,7 +3119,8 @@ function AppShell({
       setOpenExplanationFor(null);
       setShowMilestone2TopicReview(true);
       setExpandedChapterId(FIRST_GUIDED_CHAPTER_ID);
-      setPendingMilestone3TopicGuideEntry(true);
+      setMilestone3ProgressStage(MILESTONE3_PROGRESS_STAGE.INTRO_STARS);
+      setMilestone3TopicGuideStep("topic-stars");
       actions.setSelectedSubject("Mathematics");
       actions.setSelectedTopic(pageContext.selectedTopic || "Functions");
       actions.setRoute("quiz");
@@ -2914,6 +3149,13 @@ function AppShell({
     setOpenExplanationFor(null);
     setShowMilestone2TopicReview(true);
     setExpandedChapterId(FIRST_GUIDED_CHAPTER_ID);
+    if (quizContext.guideMode === "milestone3-set3") {
+      setMilestone3ProgressStage(MILESTONE3_PROGRESS_STAGE.SET4_READY);
+      setMilestone3TopicGuideStep("set-4-start");
+    } else if (quizContext.guideMode === "milestone3-set4") {
+      setMilestone3ProgressStage(MILESTONE3_PROGRESS_STAGE.POST_SET4_STARS_11);
+      setMilestone3TopicGuideStep("stars-11");
+    }
     actions.stopQuiz();
   }
 
@@ -3061,15 +3303,34 @@ function AppShell({
 
   function advanceMilestone3TopicGuide() {
     if (showMilestone3TopicStarsGuide) {
+      setMilestone3ProgressStage(MILESTONE3_PROGRESS_STAGE.SET3_READY);
       setMilestone3TopicGuideStep("set-3-start");
+      return;
+    }
+
+    if (showMilestone3Stars11Guide) {
+      setMilestone3ProgressStage(MILESTONE3_PROGRESS_STAGE.POST_SET4_NEED_12);
+      setMilestone3TopicGuideStep("need-12");
+      return;
+    }
+
+    if (showMilestone3Need12Guide) {
+      setMilestone3ProgressStage(MILESTONE3_PROGRESS_STAGE.POST_SET4_REDO_SET1);
+      setMilestone3TopicGuideStep("redo-set-1");
+      return;
+    }
+
+    if (showMilestone3RedoSet1Guide) {
+      setMilestone3ProgressStage(MILESTONE3_PROGRESS_STAGE.COMPLETE);
+      persistMilestone3TopicGuideComplete(true);
+      setHasCompletedMilestone3TopicGuide(true);
+      setMilestone3TopicGuideStep(null);
+      actions.advanceMissionCheckpoint();
     }
   }
 
   function completeMilestone3TopicGuide() {
-    persistMilestone3TopicGuideComplete(true);
-    setHasCompletedMilestone3TopicGuide(true);
     setMilestone3TopicGuideStep(null);
-    setPendingMilestone3TopicGuideEntry(false);
   }
 
   function advanceToChoiceGuide() {
@@ -3238,19 +3499,32 @@ function AppShell({
     actions.stopQuiz();
   }
 
+  function jumpToMilestone3() {
+    resetInternalJumpSurface();
+    setExpandedChapterId(FIRST_GUIDED_CHAPTER_ID);
+    setInternalOnboardingGuideKey(null);
+    setOnboardingGuideStep(null);
+    setMissionGuideStep(null);
+    setMilestone2GuideStep(null);
+    setMilestone2CompletionExitStep(null);
+    setShowMilestone2TopicReview(true);
+    setMilestone2PostReviewGuideStep(null);
+    setMilestone3ProgressStage(MILESTONE3_PROGRESS_STAGE.INTRO_STARS);
+    setMilestone3TopicGuideStep("topic-stars");
+    actions.setSelectedSubject("Mathematics");
+    actions.setSelectedTopic("Functions");
+    actions.setRoute("quiz");
+    actions.stopQuiz();
+  }
+
   function handleInternalJump(targetId) {
     if (targetId === "milestone-1") {
       jumpToMilestone1();
       return;
     }
 
-    if (targetId === "mission-hub") {
-      jumpToMissionHub();
-      return;
-    }
-
-    if (targetId === "milestone-2-review") {
-      jumpToMilestone2Review();
+    if (targetId === "milestone-3") {
+      jumpToMilestone3();
       return;
     }
 
@@ -3479,7 +3753,7 @@ function AppShell({
                       />
                       <div className="pandai-question-guide__bubble">
                         <h3 id="pandai-milestone2-intro-guide-title">
-                          This is the first question of Set 2
+                          This is the first question of {currentGuidedSetLabel}
                         </h3>
                         <p>
                           This set starts your next mission milestone. I will guide all 5
@@ -4382,7 +4656,7 @@ function AppShell({
                                               }`}
                                               aria-hidden="true"
                                             >
-                                              ★ 5
+                                              ★ {milestonePostQuizStarTotal}
                                             </span>
                                             <span className="pandai-topic-set-row__label">
                                               {topicItem.label}
@@ -4396,7 +4670,7 @@ function AppShell({
                                             ⌃
                                           </button>
                                           <div className="pandai-topic-set-review">
-                                            {MILESTONE2_POST_QUIZ_SET_SUMMARY.map((setItem) => (
+                                            {milestonePostQuizSetSummary.map((setItem) => (
                                               <div
                                                 key={setItem.id}
                                                 ref={
@@ -4404,6 +4678,8 @@ function AppShell({
                                                     ? milestone2PostReviewSet1Ref
                                                     : setItem.id === "set-2"
                                                       ? milestone2PostReviewSet2Ref
+                                                      : setItem.id === "set-4"
+                                                        ? milestone3PostReviewSet4ButtonRef
                                                       : undefined
                                                 }
                                                 tabIndex={-1}
@@ -4450,11 +4726,17 @@ function AppShell({
                                                     ref={
                                                       setItem.id === "set-3"
                                                         ? milestone2PostReviewSet3ButtonRef
+                                                        : setItem.id === "set-4"
+                                                          ? milestone3PostReviewSet4ButtonRef
                                                         : undefined
                                                     }
                                                     className={`pandai-start-btn pandai-start-btn--compact ${
                                                       showMilestone2PostReviewSet3Guide ||
-                                                      showMilestone3TopicStartGuide
+                                                      (showMilestone3TopicStartGuide &&
+                                                        ((milestone3TopicGuideStep === "set-3-start" &&
+                                                          setItem.id === "set-3") ||
+                                                          (milestone3TopicGuideStep === "set-4-start" &&
+                                                            setItem.id === "set-4")))
                                                         ? "is-guide-focus"
                                                         : ""
                                                     }`}
@@ -4464,12 +4746,40 @@ function AppShell({
                                                       (showMilestone3TopicGuide &&
                                                         !showMilestone3TopicStartGuide)
                                                     }
-                                                    onClick={() => startTopicQuiz(topicItem.topic, 5)}
+                                                    onClick={() =>
+                                                      startTopicQuiz(topicItem.topic, 5, {
+                                                        guideMode:
+                                                          setItem.id === "set-3"
+                                                            ? "milestone3-set3"
+                                                            : setItem.id === "set-4"
+                                                              ? "milestone3-set4"
+                                                              : null,
+                                                      })
+                                                    }
                                                   >
                                                     Start
                                                   </button>
                                                 ) : (
-                                                    <div className="pandai-topic-set-review__actions">
+                                                    <div
+                                                      ref={
+                                                        showMilestone3RedoSet1Guide &&
+                                                        setItem.id === "set-1"
+                                                          ? milestone3Set1RetryGuideRef
+                                                          : undefined
+                                                      }
+                                                      tabIndex={
+                                                        showMilestone3RedoSet1Guide &&
+                                                        setItem.id === "set-1"
+                                                          ? -1
+                                                          : undefined
+                                                      }
+                                                      className={`pandai-topic-set-review__actions ${
+                                                        showMilestone3RedoSet1Guide &&
+                                                        setItem.id === "set-1"
+                                                          ? "is-guide-focus"
+                                                          : ""
+                                                      }`}
+                                                    >
                                                       <button
                                                         type="button"
                                                         className="pandai-topic-set-review__btn pandai-topic-set-review__btn--view"
@@ -4481,15 +4791,54 @@ function AppShell({
                                                       />
                                                       <button
                                                         type="button"
-                                                        className="pandai-topic-set-review__btn pandai-topic-set-review__btn--retry"
+                                                        className={`pandai-topic-set-review__btn pandai-topic-set-review__btn--retry ${
+                                                          showMilestone3RedoSet1Guide &&
+                                                          setItem.id === "set-1"
+                                                            ? "is-guide-focus"
+                                                            : ""
+                                                        }`}
                                                         aria-label={`Retry ${setItem.label}`}
                                                         disabled={
                                                           showMilestone2PostReviewGuide ||
-                                                          showMilestone3TopicGuide
+                                                          (showMilestone3TopicGuide &&
+                                                            !(showMilestone3RedoSet1Guide &&
+                                                              setItem.id === "set-1"))
+                                                        }
+                                                        onClick={
+                                                          showMilestone3RedoSet1Guide &&
+                                                          setItem.id === "set-1"
+                                                            ? advanceMilestone3TopicGuide
+                                                            : undefined
                                                         }
                                                       >
                                                         ↻
                                                       </button>
+
+                                                      {showMilestone3RedoSet1Guide &&
+                                                      setItem.id === "set-1" ? (
+                                                        <div
+                                                          className="pandai-question-guide pandai-question-guide--post-review-set3 pandai-question-guide--milestone3-topic-start"
+                                                          role="dialog"
+                                                          aria-labelledby="pandai-milestone3-redo-set1-title"
+                                                        >
+                                                          <img
+                                                            src={pbotMascot}
+                                                            alt=""
+                                                            aria-hidden="true"
+                                                            className="pandai-question-guide__mascot"
+                                                          />
+                                                          <div className="pandai-question-guide__bubble">
+                                                            <h3 id="pandai-milestone3-redo-set1-title">
+                                                              One more star to go
+                                                            </h3>
+                                                            <p>
+                                                              To get that last star, redo Set 1 and
+                                                              answer all 5 questions correctly so it
+                                                              becomes 3 stars.
+                                                            </p>
+                                                          </div>
+                                                        </div>
+                                                      ) : null}
                                                     </div>
                                                 )}
 
@@ -4583,7 +4932,10 @@ function AppShell({
                                                 ) : null}
 
                                                 {showMilestone3TopicStartGuide &&
-                                                setItem.id === "set-3" ? (
+                                                ((milestone3TopicGuideStep === "set-3-start" &&
+                                                  setItem.id === "set-3") ||
+                                                  (milestone3TopicGuideStep === "set-4-start" &&
+                                                    setItem.id === "set-4")) ? (
                                                   <div
                                                     className="pandai-question-guide pandai-question-guide--post-review-set3 pandai-question-guide--milestone3-topic-start"
                                                     role="dialog"
@@ -4597,9 +4949,12 @@ function AppShell({
                                                     />
                                                     <div className="pandai-question-guide__bubble">
                                                       <h3 id="pandai-milestone3-topic-start-title">
-                                                        Set 3 is ready
+                                                        {setItem.label} is ready
                                                       </h3>
-                                                      <p>You can continue now. Tap Start to begin Set 3.</p>
+                                                      <p>
+                                                        You can continue now. Tap Start to begin{" "}
+                                                        {setItem.label}.
+                                                      </p>
                                                     </div>
                                                   </div>
                                                 ) : null}
@@ -4607,7 +4962,9 @@ function AppShell({
                                             ))}
                                           </div>
 
-                                          {showMilestone3TopicStarsGuide ? (
+                                          {showMilestone3TopicStarsGuide ||
+                                          showMilestone3Stars11Guide ||
+                                          showMilestone3Need12Guide ? (
                                             <div
                                               className="pandai-question-guide pandai-question-guide--post-review-topic-stars"
                                               role="dialog"
@@ -4621,11 +4978,18 @@ function AppShell({
                                               />
                                               <div className="pandai-question-guide__bubble">
                                                 <h3 id="pandai-post-review-topic-stars-title">
-                                                  These are your stars so far
+                                                  {showMilestone3Stars11Guide
+                                                    ? "You now have 11 stars"
+                                                    : showMilestone3Need12Guide
+                                                      ? "You need 12 stars"
+                                                      : "These are your stars so far"}
                                                 </h3>
                                                 <p>
-                                                  Before we start Set 3, I want to show you your total
-                                                  stars for this topic. Let&apos;s collect more stars.
+                                                  {showMilestone3Stars11Guide
+                                                    ? "Great job. You now have 11 stars for this topic."
+                                                    : showMilestone3Need12Guide
+                                                      ? "You need 12 stars to unlock the next topic for free."
+                                                      : "Before we start Set 3, I want to show you your total stars for this topic. Let's collect more stars."}
                                                 </p>
                                                 <button
                                                   type="button"
@@ -4666,14 +5030,16 @@ function AppShell({
                                           Start
                                         </button>
                                       ) : !showMilestone2TopicSummary ? (
-                                        <span
-                                          className={`pandai-topic-set-row__coin ${
-                                            isPostReviewActionLocked ? "is-disabled" : ""
-                                          }`}
-                                          aria-hidden="true"
-                                        >
-                                          🪙
-                                        </span>
+                                        <>
+                                          <span
+                                            className={`pandai-topic-set-row__coin ${
+                                              isPostReviewActionLocked ? "is-disabled" : ""
+                                            }`}
+                                            aria-hidden="true"
+                                          >
+                                            🪙
+                                          </span>
+                                        </>
                                       ) : null}
                                     </div>
                                   );
@@ -4923,7 +5289,9 @@ function AppShell({
           <div className="pandai-quiz-completion__scrim" aria-hidden="true" />
           <div className="pandai-quiz-completion__stage">
             <div
-              className="pandai-quiz-completion__dialog"
+              className={`pandai-quiz-completion__dialog ${
+                completionGuideStepKey === "unlock-note" ? "is-unlock-note-focused" : ""
+              }`}
               role="dialog"
               aria-modal="true"
               aria-labelledby="pandai-quiz-completion-title"
@@ -5024,7 +5392,11 @@ function AppShell({
 
                 {isRewardCompletionGuideStep && completionGuideCopy ? (
                   <div
-                    className={`pandai-quiz-completion__guide is-step-${completionGuideStep}`}
+                    className={`pandai-quiz-completion__guide is-step-${completionGuideStep} ${
+                      completionGuideStepKey === "unlock-note"
+                        ? "is-unlock-note-step"
+                        : ""
+                    }`}
                     role="note"
                     aria-labelledby="pandai-quiz-completion-guide-title"
                   >

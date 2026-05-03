@@ -41,6 +41,7 @@ const LEARNER_NAME_STORAGE_KEY = "pbot:learner-name";
 const SELECTED_REWARD_STORAGE_KEY = "pbot:selected-reward";
 const MILESTONE2_POST_REVIEW_GUIDE_STORAGE_KEY = "pbot:milestone2-post-review-guide-complete";
 const MILESTONE3_TOPIC_GUIDE_STORAGE_KEY = "pbot:milestone3-topic-guide-complete";
+const MILESTONE3_PROGRESS_STAGE_STORAGE_KEY = "pbot:milestone3-progress-stage";
 
 function resolveLanguageId(value, fallback = "en") {
   const normalized = String(value || "").trim().toLowerCase();
@@ -185,6 +186,7 @@ export function clearOnboardingProfileStorage() {
     window.localStorage.removeItem(SELECTED_REWARD_STORAGE_KEY);
     window.localStorage.removeItem(MILESTONE2_POST_REVIEW_GUIDE_STORAGE_KEY);
     window.localStorage.removeItem(MILESTONE3_TOPIC_GUIDE_STORAGE_KEY);
+    window.localStorage.removeItem(MILESTONE3_PROGRESS_STAGE_STORAGE_KEY);
   } catch {
     // Ignore storage failures for prototype mode.
   }
@@ -220,6 +222,22 @@ export function readMilestone3TopicGuideComplete(fallback = false) {
 export function persistMilestone3TopicGuideComplete(value = true) {
   try {
     window.localStorage.setItem(MILESTONE3_TOPIC_GUIDE_STORAGE_KEY, value ? "true" : "false");
+  } catch {
+    // Ignore storage failures for prototype mode.
+  }
+}
+
+export function readMilestone3ProgressStage(fallback = "not-started") {
+  try {
+    return window.localStorage.getItem(MILESTONE3_PROGRESS_STAGE_STORAGE_KEY) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export function persistMilestone3ProgressStage(value = "not-started") {
+  try {
+    window.localStorage.setItem(MILESTONE3_PROGRESS_STAGE_STORAGE_KEY, value);
   } catch {
     // Ignore storage failures for prototype mode.
   }

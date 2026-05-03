@@ -1,5 +1,5 @@
 const MATH_ONLY_MESSAGE =
-  "PBot prototype sekarang support Mathematics sahaja. Sila pilih Mathematics untuk teruskan.";
+  "This PBot prototype currently supports Mathematics only. Please choose Mathematics to continue.";
 
 const MATH_TOPICS = [
   "Functions",
@@ -57,66 +57,66 @@ export function detectCoachTextIntent(input) {
 
 function buildHomeReply(text, sessionContext) {
   if (/nota|video|buku|hub|bookmark/.test(text)) {
-    return "Boleh. Pilih Mathematics dulu, lepas tu saya buka bahan belajar yang sesuai.";
+    return "Sure. Choose Mathematics first, then I can open the right learning materials.";
   }
 
   if (/sambung|continue|last/.test(text) && sessionContext.lastActivity?.title) {
-    return `Boleh. Kita sambung "${sessionContext.lastActivity.title}" dulu.`;
+    return `Sure. Let's continue "${sessionContext.lastActivity.title}" first.`;
   }
 
   if (/mathematics|math|matematik/.test(text)) {
-    return "Bagus. Pilih Mathematics dulu, lepas tu kita pilih topik paling sesuai.";
+    return "Good. Choose Mathematics first, then we can pick the best topic.";
   }
 
-  return "Saya cadang pilih Mathematics dulu, kemudian kita mula dengan topik mudah.";
+  return "I suggest choosing Mathematics first, then starting with an easier topic.";
 }
 
 function buildSubjectReply(text) {
   if (/nota/.test(text)) {
-    return "Saya boleh buka Quick Notes untuk topik pilihan anda.";
+    return "I can open Quick Notes for your selected topic.";
   }
 
   if (/video/.test(text)) {
-    return "Saya boleh buka video ringkas ikut topik anda.";
+    return "I can open a short video for your topic.";
   }
 
   if (/buku|textbook/.test(text)) {
-    return "Baik, saya boleh bawa anda ke rujukan buku teks.";
+    return "Sure, I can take you to the textbook reference.";
   }
 
   if (/senang|mudah|easy/.test(text)) {
-    return "Mula dengan Number Value dulu. Lepas yakin, baru pergi Functions.";
+    return "Start with Number Value first. Once you feel confident, move to Functions.";
   }
 
   if (/topik|topic|chapter/.test(text)) {
-    return `Topik cadangan: ${MATH_TOPICS.slice(0, 3).join(", ")}. Nak mula yang mana?`;
+    return `Suggested topics: ${MATH_TOPICS.slice(0, 3).join(", ")}. Which one do you want to start with?`;
   }
 
-  return "Kita dah set Mathematics. Pilih satu topik dulu supaya saya boleh coach lebih tepat.";
+  return "Mathematics is selected. Choose one topic first so I can coach you more accurately.";
 }
 
 function buildQuizReply(text, quizContext) {
   if (/nota/.test(text)) {
-    return "Baik, saya buka Quick Notes untuk topik ini.";
+    return "Sure, I will open Quick Notes for this topic.";
   }
 
   if (/video/.test(text)) {
-    return "Baik, saya buka video ringkas supaya senang faham konsep.";
+    return "Sure, I will open a short video to help explain the concept.";
   }
 
   if (/buku|textbook/.test(text)) {
-    return "Baik, saya buka rujukan buku teks untuk topik ini.";
+    return "Sure, I will open the textbook reference for this topic.";
   }
 
   if (quizContext.subState === "reviewing_final") {
     const questionNumber = (quizContext.displayIndex ?? quizContext.currentIndex) + 1;
     if (/submit|hantar/.test(text)) {
-      return "Bila sudah siap semak, tekan Submit Answer untuk tamatkan set ini.";
+      return "When you are done reviewing, press Submit Answer to finish this set.";
     }
 
     return questionNumber === quizContext.total
-      ? "Ini soalan terakhir dalam mode review. Anda boleh semak soalan sebelumnya atau terus Submit Answer."
-      : `Anda sedang review soalan ${questionNumber}/${quizContext.total}. Mode ini read-only.`;
+      ? "This is the last question in review mode. You can review previous questions or submit now."
+      : `You are reviewing question ${questionNumber}/${quizContext.total}. This mode is read-only.`;
   }
 
   if (/hint|petunjuk/.test(text) && quizContext.currentQuestion?.hint) {
@@ -124,22 +124,22 @@ function buildQuizReply(text, quizContext) {
   }
 
   if (quizContext.subState === "awaiting_selection") {
-    return "Cuba pilih jawapan paling hampir dulu. Kalau ragu, taip 'hint'.";
+    return "Try choosing the closest answer first. If you are unsure, type 'hint'.";
   }
 
   if (quizContext.subState === "selected_not_saved") {
-    return `Pilihan ${quizContext.selectedOption || "-"} direkod. Kalau yakin, tekan Save Answer.`;
+    return `Choice ${quizContext.selectedOption || "-"} is recorded. If you are sure, press Save Answer.`;
   }
 
   if (quizContext.subState === "saved_correct") {
-    return "Bagus, jawapan betul. Jom teruskan ke soalan seterusnya.";
+    return "Good, that answer is correct. Let's continue to the next question.";
   }
 
   if (quizContext.subState === "saved_wrong") {
-    return "Jawapan salah direkod. Rujuk explanation, kemudian tekan Next untuk soalan seterusnya.";
+    return "Wrong answer saved. Read the explanation, then press Next for the next question.";
   }
 
-  return "Saya ada di sini. Teruskan satu langkah demi satu langkah.";
+  return "I am here. Continue one step at a time.";
 }
 
 function getLearnPageLabel(learnView) {
@@ -159,25 +159,25 @@ function buildLearnReply(text, pageContext) {
   const subject = pageContext.selectedSubject || "Mathematics";
 
   if (/nota/.test(text)) {
-    return "Baik, saya boleh buka Quick Notes untuk subjek ini.";
+    return "Sure, I can open Quick Notes for this subject.";
   }
   if (/video/.test(text)) {
-    return "Baik, saya boleh buka Videos untuk subjek ini.";
+    return "Sure, I can open Videos for this subject.";
   }
   if (/eksperimen|experiment/.test(text)) {
-    return "Baik, saya boleh buka Experiments untuk subjek ini.";
+    return "Sure, I can open Experiments for this subject.";
   }
   if (/buku|textbook/.test(text)) {
-    return "Baik, saya boleh buka Textbooks untuk rujukan lanjut.";
+    return "Sure, I can open Textbooks for further reference.";
   }
   if (/bookmark/.test(text)) {
-    return "Baik, saya boleh buka Bookmarks sekarang.";
+    return "Sure, I can open Bookmarks now.";
   }
   if (/quiz|latihan|practice/.test(text)) {
-    return "Lepas habis belajar, kita teruskan dengan quick quiz untuk semak kefahaman.";
+    return "After learning, continue with a quick quiz to check your understanding.";
   }
 
-  return `Anda di ${getLearnPageLabel(learnView)} untuk ${subject}. Nak saya buka notes, videos, atau textbook?`;
+  return `You are in ${getLearnPageLabel(learnView)} for ${subject}. Should I open notes, videos, or a textbook?`;
 }
 
 export function generateCoachReply({
@@ -210,8 +210,8 @@ export function generateCoachReply({
   }
 
   if (pageContext.selectedTopic) {
-    return `Untuk topik ${pageContext.selectedTopic}, kita boleh buat 2 soalan warm-up dulu.`;
+    return `For ${pageContext.selectedTopic}, we can start with 2 warm-up questions first.`;
   }
 
-  return "Boleh, saya bantu langkah demi langkah.";
+  return "Sure, I can help step by step.";
 }

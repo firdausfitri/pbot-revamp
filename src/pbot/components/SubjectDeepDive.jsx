@@ -107,9 +107,9 @@ export default function SubjectDeepDive({
 
       {status === "error" ? (
         <div className="pbot-card">
-          <div style={{ fontWeight: 700 }}>Tak dapat load analysis sekarang.</div>
+          <div style={{ fontWeight: 700 }}>Unable to load analysis right now.</div>
           <div className="pbot-footnote">
-            Cuba lagi atau buka halaman analysis penuh.
+            Try again or open the full analysis page.
           </div>
           <div className="pbot-row" style={{ marginTop: 10 }}>
             <button type="button" className="pbot-btn pbot-btn--small" onClick={onRetry}>
@@ -165,9 +165,9 @@ export default function SubjectDeepDive({
           <h3 className="pbot-h3">Focus topics</h3>
           {focusTopics.length === 0 ? (
             <div className="pbot-card">
-              <div style={{ fontWeight: 700 }}>Tiada topik untuk difokuskan.</div>
+              <div style={{ fontWeight: 700 }}>No focus topics right now.</div>
               <div className="pbot-footnote">
-                Hebat, teruskan dengan latihan lebih mencabar.
+                Great, continue with more challenging practice.
               </div>
               <button
                 type="button"
@@ -193,4 +193,3 @@ export default function SubjectDeepDive({
     </div>
   );
 }
-

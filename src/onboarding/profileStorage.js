@@ -39,6 +39,8 @@ const DEFAULT_NAME_SUGGESTIONS = ["Aiman", "Aim", "Man", "TopScorer"];
 const PREFERRED_LANGUAGE_STORAGE_KEY = "pbot:preferred-language";
 const LEARNER_NAME_STORAGE_KEY = "pbot:learner-name";
 const SELECTED_REWARD_STORAGE_KEY = "pbot:selected-reward";
+const MILESTONE2_POST_REVIEW_GUIDE_STORAGE_KEY = "pbot:milestone2-post-review-guide-complete";
+const MILESTONE3_TOPIC_GUIDE_STORAGE_KEY = "pbot:milestone3-topic-guide-complete";
 
 function resolveLanguageId(value, fallback = "en") {
   const normalized = String(value || "").trim().toLowerCase();
@@ -171,6 +173,53 @@ export function persistSelectedReward(rewardId) {
 
   try {
     window.localStorage.setItem(SELECTED_REWARD_STORAGE_KEY, resolvedId);
+  } catch {
+    // Ignore storage failures for prototype mode.
+  }
+}
+
+export function clearOnboardingProfileStorage() {
+  try {
+    window.localStorage.removeItem(PREFERRED_LANGUAGE_STORAGE_KEY);
+    window.localStorage.removeItem(LEARNER_NAME_STORAGE_KEY);
+    window.localStorage.removeItem(SELECTED_REWARD_STORAGE_KEY);
+    window.localStorage.removeItem(MILESTONE2_POST_REVIEW_GUIDE_STORAGE_KEY);
+    window.localStorage.removeItem(MILESTONE3_TOPIC_GUIDE_STORAGE_KEY);
+  } catch {
+    // Ignore storage failures for prototype mode.
+  }
+}
+
+export function readMilestone2PostReviewGuideComplete(fallback = false) {
+  try {
+    return window.localStorage.getItem(MILESTONE2_POST_REVIEW_GUIDE_STORAGE_KEY) === "true";
+  } catch {
+    return Boolean(fallback);
+  }
+}
+
+export function persistMilestone2PostReviewGuideComplete(value = true) {
+  try {
+    window.localStorage.setItem(
+      MILESTONE2_POST_REVIEW_GUIDE_STORAGE_KEY,
+      value ? "true" : "false",
+    );
+  } catch {
+    // Ignore storage failures for prototype mode.
+  }
+}
+
+export function readMilestone3TopicGuideComplete(fallback = false) {
+  try {
+    return window.localStorage.getItem(MILESTONE3_TOPIC_GUIDE_STORAGE_KEY) === "true";
+  } catch {
+    return Boolean(fallback);
+  }
+}
+
+export function persistMilestone3TopicGuideComplete(value = true) {
+  try {
+    window.localStorage.setItem(MILESTONE3_TOPIC_GUIDE_STORAGE_KEY, value ? "true" : "false");
   } catch {
     // Ignore storage failures for prototype mode.
   }

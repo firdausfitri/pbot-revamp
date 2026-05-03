@@ -5,7 +5,7 @@ import {
 } from "./subjectAnalysis";
 
 const MATH_ONLY_MESSAGE =
-  "PBot prototype sekarang support Mathematics sahaja. Sila pilih Mathematics untuk teruskan.";
+  "This PBot prototype currently supports Mathematics only. Please choose Mathematics to continue.";
 
 function getGoalLine(userContext) {
   const progress = Math.max(0, Number(userContext.goalProgress) || 0);
@@ -27,7 +27,7 @@ export function generateCoachFromSubjectAnalysis(
   dailyGoalProgress,
 ) {
   if (!analysis) {
-    return "Teruskan belajar dengan satu topik fokus hari ini.";
+    return "Continue learning with one focus topic today.";
   }
 
   const focusTopics = rankFocusTopics(analysis, 3);
@@ -41,19 +41,19 @@ export function generateCoachFromSubjectAnalysis(
   );
 
   if (notStartedCount >= 2 && firstFocus) {
-    return `Bagus dalam ${analysis.subjectName}. Jom mula ${firstFocus.topicName} dengan 2 quiz ringkas.`;
+    return `Strong progress in ${analysis.subjectName}. Start ${firstFocus.topicName} with 2 quick quizzes.`;
   }
 
   const hots = analysis.thinkingSkills.hots;
   if ((hots !== null && hots <= 30) || (behaviourSignals?.quitAfterWrongRate ?? 0) > 25) {
-    return "HOTS masih rendah. Cuba latihan dengan hint untuk bina keyakinan.";
+    return "HOTS is still low. Try practice with hints to build confidence.";
   }
 
   if (goalRemaining > 0 && firstFocus) {
-    return `Fokus ${firstFocus.topicName} dulu. Lagi ${goalRemaining} quiz untuk capai target hari ini.`;
+    return `Focus on ${firstFocus.topicName} first. ${goalRemaining} more quizzes to reach today's target.`;
   }
 
-  return "Prestasi stabil. Cuba satu topik lebih mencabar.";
+  return "Performance is stable. Try one more challenging topic.";
 }
 
 function buildHomeSnapshot({ userContext, sessionContext }) {
@@ -62,7 +62,7 @@ function buildHomeSnapshot({ userContext, sessionContext }) {
   return {
     statusLine: `${getGoalLine(userContext)} • Last: ${getLastActivityTitle(sessionContext)}`,
     message:
-      "Nak mula belajar? Pilih Mathematics atau sambung aktiviti terakhir.",
+      "Ready to learn? Choose Mathematics or continue your last activity.",
     quickActions: [
       {
         id: "continue-last-activity",
@@ -108,7 +108,7 @@ function buildSubjectSnapshot({ userContext, sessionContext }) {
 
   return {
     statusLine: `Mathematics selected • ${getGoalLine(userContext)}`,
-    message: "Ok, kita fokus Mathematics. Pilih satu topik untuk mula.",
+    message: "Okay, we will focus on Mathematics. Choose one topic to start.",
     quickActions: actions.slice(0, 3),
   };
 }
@@ -187,8 +187,8 @@ function buildQuizSnapshot({ userContext, quizContext }) {
     return {
       statusLine: `Review: ${questionNumber}/${quizContext.total} • Read-only`,
       message: onFinalReviewQuestion
-        ? "Ini soalan terakhir. Semak soalan sebelumnya atau Submit Answer bila anda bersedia."
-        : `Anda sedang review soalan ${questionNumber}/${quizContext.total}. Jawapan tidak boleh diubah.`,
+        ? "This is the last question. Review previous questions or submit when you are ready."
+        : `You are reviewing question ${questionNumber}/${quizContext.total}. Answers cannot be changed.`,
       quickActions: reviewActions,
     };
   }
@@ -206,8 +206,8 @@ function buildQuizSnapshot({ userContext, quizContext }) {
       statusLine,
       message:
         questionNumber === quizContext.total
-          ? "Soalan terakhir. Pilih jawapan dulu, kemudian kita semak sebelum submit."
-          : "Pilih jawapan dulu. Kalau ragu, tekan Hint.",
+          ? "Last question. Choose an answer first, then we will check before submitting."
+          : "Choose an answer first. If you are unsure, press Hint.",
       quickActions: [
         {
           id: "hint-before-select",
@@ -216,7 +216,7 @@ function buildQuizSnapshot({ userContext, quizContext }) {
         },
         {
           id: "eliminate-two",
-          label: "Eliminate 2 pilihan",
+          label: "Eliminate 2 choices",
           intent: "eliminate_two",
         },
         {
@@ -233,12 +233,12 @@ function buildQuizSnapshot({ userContext, quizContext }) {
       statusLine,
       message:
         questionNumber === quizContext.total
-          ? `Ini soalan terakhir. Pilihan ${quizContext.selectedOption}. Tekan Save Answer untuk semak sebelum submit.`
-          : `Ok, anda pilih ${quizContext.selectedOption}. Nak saya semak cepat sebelum Save?`,
+          ? `This is the last question. Choice ${quizContext.selectedOption}. Press Save Answer to check before submitting.`
+          : `Okay, you chose ${quizContext.selectedOption}. Do you want me to check quickly before saving?`,
       quickActions: [
         {
-          id: "semak-dulu",
-          label: "Semak dulu",
+          id: "review-first",
+          label: "Review first",
           intent: "review_before_save",
         },
         {
@@ -253,7 +253,7 @@ function buildQuizSnapshot({ userContext, quizContext }) {
   if (quizContext.subState === "saved_correct") {
     return {
       statusLine,
-      message: "Nice ✅. Jom teruskan soalan seterusnya.",
+      message: "Nice. Let's continue to the next question.",
       quickActions: [
         {
           id: "next-question",
@@ -271,7 +271,7 @@ function buildQuizSnapshot({ userContext, quizContext }) {
 
   return {
     statusLine,
-    message: "Jawapan salah direkod. Tengok hint atau explanation, kemudian teruskan.",
+    message: "Wrong answer saved. Check the hint or explanation, then continue.",
     quickActions: [
       {
         id: "show-hint-wrong",
@@ -312,7 +312,7 @@ function buildLearnSnapshot({ userContext, pageContext }) {
   if (learnView === "quickNotes") {
     return {
       statusLine,
-      message: `Anda berada di Quick Notes ${subject}. Mula chapter pertama dulu, kemudian teruskan quiz ringkas.`,
+      message: `You are in Quick Notes for ${subject}. Start with the first chapter, then continue with a quick quiz.`,
       quickActions: [
         { id: "learn-notes-video", label: "Open Videos", intent: "open_videos" },
         { id: "learn-notes-quiz", label: "Start quick 2-quiz", intent: "start_quick_two" },
@@ -324,7 +324,7 @@ function buildLearnSnapshot({ userContext, pageContext }) {
   if (learnView === "videos") {
     return {
       statusLine,
-      message: `Pilih satu video pendek untuk ${subject}, lepas tu kita cuba 2 soalan latihan.`,
+      message: `Choose one short video for ${subject}, then try 2 practice questions.`,
       quickActions: [
         { id: "learn-video-notes", label: "Open Quick Notes", intent: "open_quick_notes" },
         { id: "learn-video-quiz", label: "Start quick 2-quiz", intent: "start_quick_two" },
@@ -336,7 +336,7 @@ function buildLearnSnapshot({ userContext, pageContext }) {
   if (learnView === "experiments") {
     return {
       statusLine,
-      message: `Bagus untuk faham konsep. Pilih satu eksperimen ${subject}, kemudian semak kefahaman dengan quiz.`,
+      message: `Great for understanding concepts. Choose one ${subject} experiment, then check your understanding with a quiz.`,
       quickActions: [
         { id: "learn-exp-video", label: "Open Videos", intent: "open_videos" },
         { id: "learn-exp-notes", label: "Open Quick Notes", intent: "open_quick_notes" },
@@ -348,7 +348,7 @@ function buildLearnSnapshot({ userContext, pageContext }) {
   if (learnView === "textbooks") {
     return {
       statusLine,
-      message: "Guna textbook untuk rujukan konsep susah, kemudian buat latihan pendek untuk kekalkan momentum.",
+      message: "Use the textbook for difficult concepts, then do short practice to keep momentum.",
       quickActions: [
         { id: "learn-book-notes", label: "Open Quick Notes", intent: "open_quick_notes" },
         { id: "learn-book-video", label: "Open Videos", intent: "open_videos" },
@@ -360,7 +360,7 @@ function buildLearnSnapshot({ userContext, pageContext }) {
   if (learnView === "bookmarks") {
     return {
       statusLine,
-      message: "Kalau belum ada bookmark, teruskan practice dulu. Lepas submit jawapan, anda boleh simpan soalan penting.",
+      message: "If you do not have bookmarks yet, continue practice first. After submitting, you can save important questions.",
       quickActions: [
         { id: "learn-bookmark-practice", label: "Go Practice", intent: "go_practice" },
         { id: "learn-bookmark-notes", label: "Open Quick Notes", intent: "open_quick_notes" },
@@ -371,7 +371,7 @@ function buildLearnSnapshot({ userContext, pageContext }) {
 
   return {
     statusLine,
-    message: `Anda berada di Learning Hub. Pilih subjek dulu, kemudian saya boleh cadang notes, videos, atau quiz.`,
+    message: `You are in Learning Hub. Choose a subject first, then I can suggest notes, videos, or quizzes.`,
     quickActions: [
       { id: "learn-hub-notes", label: "Open Quick Notes", intent: "open_quick_notes" },
       { id: "learn-hub-videos", label: "Open Videos", intent: "open_videos" },

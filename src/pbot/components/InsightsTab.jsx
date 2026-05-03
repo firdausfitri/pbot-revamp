@@ -139,7 +139,7 @@ export default function InsightsTab({
         </>
       ) : (
         <div className="pbot-footnote">
-          Tap "Show details" untuk lihat breakdown penuh.
+          Tap "Show details" to view the full breakdown.
         </div>
       )}
     </div>

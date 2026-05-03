@@ -7,12 +7,12 @@ import {
 
 function getMasteryStatus(score) {
   if (score >= 70) {
-    return "bagus";
+    return "good";
   }
   if (score >= 50) {
-    return "stabil";
+    return "stable";
   }
-  return "perlu fokus";
+  return "needs focus";
 }
 
 export function buildLearningInsights({ mastery, behaviour, contextStage }) {
@@ -21,7 +21,7 @@ export function buildLearningInsights({ mastery, behaviour, contextStage }) {
       {
         id: "math-only-insight",
         tone: "warn",
-        text: "PBot prototype sekarang support Mathematics sahaja.",
+        text: "This PBot prototype currently supports Mathematics only.",
       },
     ];
   }
@@ -57,7 +57,7 @@ export function buildLearningInsights({ mastery, behaviour, contextStage }) {
     insights.push({
       id: "weakest-topic",
       tone: "warn",
-      text: `Topik fokus: ${weakestTopic.topic} (${weakestTopic.mastery}%)`,
+      text: `Focus topic: ${weakestTopic.topic} (${weakestTopic.mastery}%)`,
     });
   }
 
@@ -68,7 +68,7 @@ export function buildLearningInsights({ mastery, behaviour, contextStage }) {
     insights.push({
       id: `below-threshold-${subject.subject}`,
       tone: "alert",
-      text: `${subject.subject} bawah 50% (${subject.mastery}%).`,
+      text: `${subject.subject} is below 50% (${subject.mastery}%).`,
     });
   });
 
@@ -76,7 +76,7 @@ export function buildLearningInsights({ mastery, behaviour, contextStage }) {
     insights.push({
       id: "short-session",
       tone: "info",
-      text: `Anda suka sesi ringkas (${behaviour.typicalSessionMins} minit).`,
+      text: `You prefer short sessions (${behaviour.typicalSessionMins} minutes).`,
     });
   }
 
@@ -84,7 +84,7 @@ export function buildLearningInsights({ mastery, behaviour, contextStage }) {
     insights.push({
       id: "quit-after-wrong",
       tone: "warn",
-      text: `Bila salah, berhenti ${behaviour.quitAfterWrongRate}%. Cuba warm-up mudah.`,
+      text: `After a wrong answer, you stop ${behaviour.quitAfterWrongRate}% of the time. Try an easier warm-up.`,
     });
   }
 
@@ -92,7 +92,7 @@ export function buildLearningInsights({ mastery, behaviour, contextStage }) {
     insights.push({
       id: "preferred-time",
       tone: "info",
-      text: `Masa terbaik belajar: ${behaviour.preferredTime}.`,
+      text: `Best learning time: ${behaviour.preferredTime}.`,
     });
   }
 

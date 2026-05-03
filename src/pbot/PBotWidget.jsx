@@ -24,15 +24,15 @@ const TAB = {
   NEXT: "next",
 };
 
-const MALAY_ORDINALS = ["pertama", "kedua", "ketiga", "keempat", "kelima"];
+const ENGLISH_ORDINALS = ["first", "second", "third", "fourth", "fifth"];
 
-function getMalayOrdinalQuestionLabel(questionNumber, total) {
+function getEnglishOrdinalQuestionLabel(questionNumber, total) {
   if (questionNumber >= total) {
-    return "soalan terakhir";
+    return "last question";
   }
 
-  const ordinal = MALAY_ORDINALS[questionNumber - 1];
-  return ordinal ? `soalan ${ordinal}` : `soalan ke-${questionNumber}`;
+  const ordinal = ENGLISH_ORDINALS[questionNumber - 1];
+  return ordinal ? `${ordinal} question` : `question ${questionNumber}`;
 }
 
 export default function PBotWidget() {
@@ -279,14 +279,14 @@ export default function PBotWidget() {
 
     const timer = setTimeout(() => {
       const questionNumber = quizContext.currentIndex + 1;
-      const questionLabel = getMalayOrdinalQuestionLabel(
+      const questionLabel = getEnglishOrdinalQuestionLabel(
         questionNumber,
         quizContext.total,
       );
       const message =
         questionNumber === quizContext.total
-          ? "Ini soalan terakhir."
-          : `Ini ${questionLabel}.`;
+          ? "This is the last question."
+          : `This is the ${questionLabel}.`;
       showNudge(message, { respectCooldown: false });
     }, 0);
 
@@ -312,7 +312,7 @@ export default function PBotWidget() {
     }
 
     const idleTimer = setTimeout(() => {
-      showNudge("Perlu hint? Saya boleh guide langkah pertama.");
+      showNudge("Need a hint? I can guide the first step.");
     }, 9000);
 
     return () => clearTimeout(idleTimer);
@@ -342,7 +342,7 @@ export default function PBotWidget() {
 
     const timer = setTimeout(() => {
       const shown = showNudge(
-        "Jawapan salah direkod. Semak explanation, kemudian tekan Next.",
+        "Wrong answer saved. Check the explanation, then press Next.",
         { questionScoped: false, respectCooldown: false },
       );
       if (shown) {
@@ -377,7 +377,7 @@ export default function PBotWidget() {
 
     const timer = setTimeout(() => {
       const shown = showNudge(
-        "Soalan terakhir siap disemak. Anda boleh review soalan sebelumnya atau Submit Answer bila ready.",
+        "The last question is ready for review. You can review previous questions or submit when you are ready.",
         { questionScoped: false, respectCooldown: false },
       );
       if (shown) {

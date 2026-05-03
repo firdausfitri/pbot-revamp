@@ -5,7 +5,11 @@ import {
   getLearnerDisplayName,
   resolveLanguageLabel,
 } from "../../onboarding/profileStorage";
-import { STARTER_FIRST_MILESTONE_ID, STARTER_MISSION_ID } from "../../missionData";
+import {
+  MISSION_DEFINITIONS,
+  STARTER_FIRST_MILESTONE_ID,
+  STARTER_MISSION_ID,
+} from "../../missionData";
 
 const PBotContext = createContext(null);
 
@@ -183,6 +187,30 @@ function unlockMissionContext(currentMissionContext) {
     ...currentMissionContext,
     hubUnlocked: true,
     completedMilestoneIds,
+  };
+}
+
+function advanceMissionContext(currentMissionContext) {
+  const unlockedMissionContext = unlockMissionContext(currentMissionContext);
+  const activeMission =
+    MISSION_DEFINITIONS.find((mission) => mission.id === unlockedMissionContext.activeMissionId) ||
+    MISSION_DEFINITIONS.find((mission) => mission.id === STARTER_MISSION_ID) ||
+    MISSION_DEFINITIONS[0];
+  const milestones = activeMission?.milestones || [];
+  const currentMilestone =
+    milestones.find(
+      (milestone) => !unlockedMissionContext.completedMilestoneIds.includes(milestone.id),
+    ) || null;
+
+  if (!currentMilestone) {
+    return unlockedMissionContext;
+  }
+
+  return {
+    ...unlockedMissionContext,
+    completedMilestoneIds: unlockedMissionContext.completedMilestoneIds.includes(currentMilestone.id)
+      ? unlockedMissionContext.completedMilestoneIds
+      : [...unlockedMissionContext.completedMilestoneIds, currentMilestone.id],
   };
 }
 
@@ -370,6 +398,7 @@ function reducer(state, action) {
         state.pageContext.selectedTopic ||
         state.sessionContext.lastTopic ||
         "Functions";
+      const total = clampQuizTotal(action.total);
 
       return {
         ...state,
@@ -384,7 +413,8 @@ function reducer(state, action) {
           ...createQuizContext(),
           inProgress: true,
           guideMode: action.guideMode || null,
-          total: clampQuizTotal(action.total),
+          currentIndex: clampQuizIndex(action.initialIndex, total),
+          total,
         },
       };
     }
@@ -608,6 +638,12 @@ function reducer(state, action) {
         },
       };
     }
+    case "advance_mission_checkpoint": {
+      return {
+        ...state,
+        missionContext: advanceMissionContext(state.missionContext),
+      };
+    }
     default: {
       return state;
     }
@@ -765,6 +801,7 @@ export function PBotContextProvider({ children, profile }) {
             topic: payload.topic,
             total: payload.total,
             guideMode: payload.guideMode,
+            initialIndex: payload.initialIndex,
           }),
         stopQuiz: () => dispatch({ type: "stop_quiz" }),
         selectQuizOption: (option) =>
@@ -829,6 +866,7 @@ export function PBotContextProvider({ children, profile }) {
         openMissionHub: () => dispatch({ type: "open_mission_hub" }),
         completePracticeMissionGuide: () =>
           dispatch({ type: "complete_practice_mission_guide" }),
+        advanceMissionCheckpoint: () => dispatch({ type: "advance_mission_checkpoint" }),
         requestTopicPickerFocus: () => {
           dispatch({ type: "set_topic_picker_highlight", highlighted: true });
           setTimeout(() => {

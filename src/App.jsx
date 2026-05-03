@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { PBotContextProvider, usePBotContext } from "./pbot/context/PBotContext";
 import pbotMascot from "./pbot/assets/pbot-mascot.svg";
@@ -12,13 +12,18 @@ import {
   LOCKED_REWARD_PREVIEWS,
   REWARD_OPTIONS,
   buildNameSuggestions,
+  clearOnboardingProfileStorage,
   getLearnerDisplayName,
   getLearnerInitial,
   normalizeLearnerName,
   persistLearnerName,
+  persistMilestone2PostReviewGuideComplete,
+  persistMilestone3TopicGuideComplete,
   persistPreferredLanguage,
   persistSelectedReward,
   readLearnerName,
+  readMilestone2PostReviewGuideComplete,
+  readMilestone3TopicGuideComplete,
   readPreferredLanguage,
   readSelectedReward,
 } from "./onboarding/profileStorage";
@@ -44,8 +49,21 @@ const SECOND_GUIDED_WRONG_OPTION_ID = "C";
 const THIRD_GUIDED_QUESTION_INDEX = 2;
 const ENGLISH_ORDINALS = ["first", "second", "third", "fourth", "fifth"];
 const READ_GUIDE_LOCK_MS = 2000;
-const QUIZ_COMPLETION_GUIDE_STEPS = ["points", "coin", "life", "practice"];
-const QUIZ_COMPLETION_GUIDE_DONE_STEP = QUIZ_COMPLETION_GUIDE_STEPS.length;
+const QUIZ_COMPLETION_GUIDE_BASE_STEPS = ["points", "coin"];
+const QUIZ_COMPLETION_GUIDE_TRAILING_STEPS = ["practice"];
+const MILESTONE2_POST_QUIZ_SET_SUMMARY = [
+  { id: "set-3", label: "Set 3", stars: 0, status: "available" },
+  { id: "set-2", label: "Set 2", stars: 3, status: "completed" },
+  { id: "set-1", label: "Set 1", stars: 2, status: "completed" },
+];
+
+function getQuizCompletionGuideSteps(incorrectCount, guideMode) {
+  return [
+    ...QUIZ_COMPLETION_GUIDE_BASE_STEPS,
+    ...(incorrectCount > 0 ? ["life"] : []),
+    ...(guideMode === "milestone2" ? [] : QUIZ_COMPLETION_GUIDE_TRAILING_STEPS),
+  ];
+}
 
 function getEnglishOrdinalQuestionLabel(questionNumber, total) {
   if (questionNumber >= total) {
@@ -337,6 +355,12 @@ function getNextMathTopic(currentTopic) {
 }
 
 const FIRST_GUIDED_CHAPTER_ID = "chapter-functions";
+const INTERNAL_JUMP_TARGETS = [
+  { id: "milestone-1", label: "Milestone 1" },
+  { id: "mission-hub", label: "Mission Hub" },
+  { id: "milestone-2", label: "Milestone 2" },
+  { id: "milestone-2-review", label: "Back to Quiz" },
+];
 
 const RECENT_ACTIVITIES = [
   {
@@ -738,7 +762,7 @@ function SubjectAnalysisView({ analysis, onBackToReport, onOpenTopic }) {
 }
 
 const MISSION_ROUTE_DESKTOP_PATH =
-  "M 742 84 C 730 130 668 152 582 198 S 338 286 228 324 S 432 422 672 456 S 408 544 270 576 S 442 638 560 642 S 754 642 860 628";
+  "M 760 120 C 728 196 642 238 540 300 S 292 438 240 480 S 392 612 680 696 S 372 832 280 912 S 388 1032 580 1092 S 748 1120 862 1108";
 
 function getMissionMilestoneState(milestoneId, milestones, completedMilestoneIds) {
   if (completedMilestoneIds.has(milestoneId)) {
@@ -803,8 +827,31 @@ function getPracticeMissionGuideSteps({ learnerName, currentMilestone, currentSt
     },
     {
       title: "You can open this again later",
-      body: "Nanti kalau nak semak semula mission progress, just tap the Mission tab in the navbar to come back here anytime.",
+      body: "You can return to this Mission Hub anytime by opening the Mission tab in the navbar.",
       focusArea: "navbar",
+    },
+  ];
+}
+
+function getMilestone3EntryMissionGuideSteps({ currentMilestone, reward }) {
+  const milestoneLabel = currentMilestone?.label || "your next milestone";
+  const rewardLabel = reward?.label || "your selected reward";
+
+  return [
+    {
+      title: "You are now in Milestone 3",
+      body: "Nice work. You have finished Milestone 2, so your next target is now Milestone 3.",
+      focusArea: "header",
+    },
+    {
+      title: "This is your next checkpoint",
+      body: `The route has moved forward. Your current checkpoint now shows ${milestoneLabel}, and this is the next goal you need to complete.`,
+      focusArea: "route",
+    },
+    {
+      title: "Keep going to unlock more",
+      body: `You can track your reward progress here while you continue the next milestone for ${rewardLabel}.`,
+      focusArea: "sidebar",
     },
   ];
 }
@@ -881,7 +928,7 @@ function MissionHubView({
 
             {missionGuide ? (
               <div
-                className="pandai-mission-entry-guide"
+                className={`pandai-mission-entry-guide is-focus-${guideFocusArea || "header"}`}
                 role="dialog"
                 aria-modal="false"
                 aria-labelledby="pandai-mission-entry-guide-title"
@@ -898,13 +945,15 @@ function MissionHubView({
                   <div className="pandai-mission-entry-guide__actions">
                     {missionGuide.isFinalStep ? (
                       <>
-                        <button
-                          type="button"
-                          className="pandai-quiz-completion__btn pandai-quiz-completion__btn--ghost"
-                          onClick={onSkipMissionGuide}
-                        >
-                          Skip for now
-                        </button>
+                        {missionGuide.showSkip ? (
+                          <button
+                            type="button"
+                            className="pandai-quiz-completion__btn pandai-quiz-completion__btn--ghost"
+                            onClick={onSkipMissionGuide}
+                          >
+                            Skip for now
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           className="pandai-quiz-completion__btn pandai-quiz-completion__btn--solid"
@@ -949,7 +998,7 @@ function MissionHubView({
 
               <svg
                 className="pandai-mission-route__path"
-                viewBox="0 0 1000 700"
+                viewBox="0 0 1000 1200"
                 aria-hidden="true"
                 preserveAspectRatio="none"
               >
@@ -1622,7 +1671,12 @@ function PrototypeMissionPage({ onboardingProfile }) {
   );
 }
 
-function PrototypeAppPage({ onboardingProfile, initialRoute = "home" }) {
+function PrototypeAppPage({
+  onboardingProfile,
+  initialRoute = "home",
+  pendingJumpTarget = null,
+  onPendingJumpHandled,
+}) {
   if (!hasCompletedOnboarding(onboardingProfile)) {
     return <Navigate to={APP_PATHS.onboarding} replace />;
   }
@@ -1632,6 +1686,8 @@ function PrototypeAppPage({ onboardingProfile, initialRoute = "home" }) {
       <AppShell
         selectedReward={onboardingProfile.selectedReward}
         initialRoute={initialRoute}
+        pendingJumpTarget={pendingJumpTarget}
+        onPendingJumpHandled={onPendingJumpHandled}
       />
     </PBotContextProvider>
   );
@@ -1644,8 +1700,14 @@ function handleCardKey(event, callback) {
   }
 }
 
-function AppShell({ selectedReward, initialRoute = "home" }) {
+function AppShell({
+  selectedReward,
+  initialRoute = "home",
+  pendingJumpTarget = null,
+  onPendingJumpHandled,
+}) {
   const location = useLocation();
+  const navigate = useNavigate();
   const { userContext, pageContext, quizContext, uiContext, missionContext, actions } =
     usePBotContext();
   const topicPickerRef = useRef(null);
@@ -1659,21 +1721,43 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
   const saveGuideRef = useRef(null);
   const progressGuideRef = useRef(null);
   const practiceNewSetButtonRef = useRef(null);
+  const completionCloseButtonRef = useRef(null);
   const explanationGuideRef = useRef(null);
   const continueGuideRef = useRef(null);
+  const milestone2BackToQuizButtonRef = useRef(null);
+  const milestone3TopicStarsRef = useRef(null);
+  const milestone2PostReviewSet1Ref = useRef(null);
+  const milestone2PostReviewSet2Ref = useRef(null);
+  const milestone2PostReviewSet3ButtonRef = useRef(null);
   const initialRouteHandledRef = useRef(false);
+  const internalGuideJumpCountRef = useRef(0);
   const homeGuideKey = location.state?.showHomeGuide ? location.key : null;
   const [analysisSubjectId, setAnalysisSubjectId] = useState("kssm-am");
   const [learnMenuOpen, setLearnMenuOpen] = useState(false);
   const [expandedChapterId, setExpandedChapterId] = useState(null);
   const [openExplanationFor, setOpenExplanationFor] = useState(null);
   const [quizCompletionModal, setQuizCompletionModal] = useState(null);
-  const [completionGuideStep, setCompletionGuideStep] = useState(QUIZ_COMPLETION_GUIDE_DONE_STEP);
+  const [completionGuideStep, setCompletionGuideStep] = useState(
+    getQuizCompletionGuideSteps(0).length,
+  );
+  const [milestone2CompletionExitStep, setMilestone2CompletionExitStep] = useState(null);
+  const [showMilestone2TopicReview, setShowMilestone2TopicReview] = useState(false);
+  const [milestone2PostReviewGuideStep, setMilestone2PostReviewGuideStep] = useState(null);
+  const [hasCompletedMilestone2PostReviewGuide, setHasCompletedMilestone2PostReviewGuide] =
+    useState(() => readMilestone2PostReviewGuideComplete(false));
+  const [milestone3TopicGuideStep, setMilestone3TopicGuideStep] = useState(null);
+  const [hasCompletedMilestone3TopicGuide, setHasCompletedMilestone3TopicGuide] = useState(() =>
+    readMilestone3TopicGuideComplete(false),
+  );
+  const [pendingMilestone3TopicGuideEntry, setPendingMilestone3TopicGuideEntry] = useState(false);
   const [missionGuideStep, setMissionGuideStep] = useState(null);
+  const [missionGuideVariant, setMissionGuideVariant] = useState(null);
   const [milestone2GuideStep, setMilestone2GuideStep] = useState(null);
+  const [internalOnboardingGuideKey, setInternalOnboardingGuideKey] = useState(null);
   const [onboardingGuideStep, setOnboardingGuideStep] = useState(() =>
     homeGuideKey ? "subject" : null,
   );
+  const onboardingGuideKey = homeGuideKey || internalOnboardingGuideKey;
   const [readGuideSession, setReadGuideSession] = useState({
     countdown: 0,
     key: null,
@@ -1732,21 +1816,63 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
       selectedReward,
     ],
   );
+  const milestone3EntryMissionGuideSteps = useMemo(
+    () =>
+      getMilestone3EntryMissionGuideSteps({
+        currentMilestone: currentMissionMilestone,
+        reward:
+          REWARD_OPTIONS.find((item) => item.id === selectedReward) || REWARD_OPTIONS[0],
+      }),
+    [currentMissionMilestone, selectedReward],
+  );
+  const activeMissionGuideSteps =
+    missionGuideVariant === "milestone3-entry"
+      ? milestone3EntryMissionGuideSteps
+      : missionGuideSteps;
   const isMissionGuideActive =
-    showMissionHubView && missionGuideStep !== null && !missionContext.hasCompletedPracticeMissionGuide;
+    showMissionHubView &&
+    missionGuideStep !== null &&
+    (missionGuideVariant === "milestone3-entry" ||
+      !missionContext.hasCompletedPracticeMissionGuide);
   const activeMissionGuide =
-    isMissionGuideActive && missionGuideSteps[missionGuideStep]
+    isMissionGuideActive && activeMissionGuideSteps[missionGuideStep]
       ? {
-          ...missionGuideSteps[missionGuideStep],
+          ...activeMissionGuideSteps[missionGuideStep],
           stepIndex: missionGuideStep,
-          totalSteps: missionGuideSteps.length,
-          isFinalStep: missionGuideStep === missionGuideSteps.length - 1,
-          finalCtaLabel: `Continue Milestone ${currentMissionMilestoneStep || 2}`,
+          totalSteps: activeMissionGuideSteps.length,
+          isFinalStep: missionGuideStep === activeMissionGuideSteps.length - 1,
+          finalCtaLabel:
+            missionGuideVariant === "milestone3-entry"
+              ? "Continue Milestone 3"
+              : `Continue Milestone ${currentMissionMilestoneStep || 2}`,
+          showSkip: true,
         }
       : null;
   const currentQuestion = quizContext.currentQuestion;
   const isMilestone2GuidedQuiz =
     showQuizAttempt && quizContext.guideMode === "milestone2";
+  const showMilestone2PostQuizTopicReview =
+    showMilestone2TopicReview &&
+    showQuizWorkspace &&
+    !showQuizAttempt &&
+    pageContext.selectedSubject === "Mathematics" &&
+    pageContext.selectedTopic === "Functions";
+  const showMilestone2PostReviewSet1Guide =
+    showMilestone2PostQuizTopicReview && milestone2PostReviewGuideStep === "set-1";
+  const showMilestone2PostReviewSet2Guide =
+    showMilestone2PostQuizTopicReview && milestone2PostReviewGuideStep === "set-2";
+  const showMilestone2PostReviewSet3Guide =
+    showMilestone2PostQuizTopicReview && milestone2PostReviewGuideStep === "set-3";
+  const showMilestone2PostReviewGuide =
+    showMilestone2PostReviewSet1Guide ||
+    showMilestone2PostReviewSet2Guide ||
+    showMilestone2PostReviewSet3Guide;
+  const showMilestone3TopicStarsGuide =
+    showMilestone2PostQuizTopicReview && milestone3TopicGuideStep === "topic-stars";
+  const showMilestone3TopicStartGuide =
+    showMilestone2PostQuizTopicReview && milestone3TopicGuideStep === "set-3-start";
+  const showMilestone3TopicGuide =
+    showMilestone3TopicStarsGuide || showMilestone3TopicStartGuide;
   const displayQuestionIndex = quizContext.displayIndex ?? quizContext.currentIndex;
   const questionNumber = Math.min(displayQuestionIndex + 1, quizContext.total);
   const questionProgress = `${questionNumber} / ${quizContext.total}`;
@@ -1788,12 +1914,26 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
         : "Good effort. Practise another set to strengthen this topic.";
   const completionCoinReward = starCount > 0 ? 1 : 0;
   const completionHeartDelta = incorrectCount > 0 ? -1 : 0;
-  const isCompletionGuideActive = completionGuideStep < QUIZ_COMPLETION_GUIDE_DONE_STEP;
+  const completionGuideSteps = useMemo(
+    () => getQuizCompletionGuideSteps(incorrectCount, quizContext.guideMode),
+    [incorrectCount, quizContext.guideMode],
+  );
+  const completionGuideDoneStep = completionGuideSteps.length;
+  const isCompletionGuideActive = completionGuideStep < completionGuideDoneStep;
   const completionGuideStepKey =
-    QUIZ_COMPLETION_GUIDE_STEPS[completionGuideStep] || null;
+    completionGuideSteps[completionGuideStep] || null;
   const isPracticeCompletionGuideStep = completionGuideStepKey === "practice";
+  const disableMilestone2CompletionActions = quizContext.guideMode === "milestone2";
   const isRewardCompletionGuideStep =
     isCompletionGuideActive && !isPracticeCompletionGuideStep;
+  const showMilestone2CompletionCloseGuide =
+    showQuizCompletionModal &&
+    quizContext.guideMode === "milestone2" &&
+    milestone2CompletionExitStep === "close";
+  const showMilestone2BackToQuizGuide =
+    !showQuizCompletionModal &&
+    isMilestone2GuidedQuiz &&
+    milestone2CompletionExitStep === "back";
   const completionGuideCopy = isCompletionGuideActive
     ? getQuizCompletionGuideCopy({
         stepKey: completionGuideStepKey,
@@ -1816,6 +1956,12 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
     quizContext.isReviewingFinalSet ? "review" : "active"
   }`;
   const isExplanationOpen = openExplanationFor === explanationKey;
+  const isFirstMilestone2Question = isMilestone2GuidedQuiz && quizContext.currentIndex === 0;
+  const showMilestone2IntroGuide =
+    isFirstMilestone2Question &&
+    !quizContext.saved &&
+    !quizContext.selectedOption &&
+    milestone2GuideStep === "intro";
   const showMilestone2ReadGuide =
     isMilestone2GuidedQuiz &&
     !quizContext.saved &&
@@ -1826,21 +1972,34 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
     !quizContext.saved &&
     !quizContext.selectedOption &&
     milestone2GuideStep === "choose";
+  const showMilestone2ProgressGuide =
+    isMilestone2GuidedQuiz &&
+    quizContext.currentIndex === THIRD_GUIDED_QUESTION_INDEX &&
+    quizContext.saved &&
+    quizContext.isCorrect &&
+    milestone2GuideStep === "progress";
+  const showMilestone2FinalProgressGuide =
+    isMilestone2GuidedQuiz &&
+    isFinalQuizQuestion &&
+    quizContext.saved &&
+    quizContext.isCorrect &&
+    quizContext.correctCount === quizContext.total &&
+    milestone2GuideStep === "final-progress";
   const showHomeSubjectGuide =
-    Boolean(homeGuideKey) &&
+    Boolean(onboardingGuideKey) &&
     !isMilestone2GuidedQuiz &&
     onboardingGuideStep === "subject" &&
     pageContext.route === "home" &&
     !pageContext.selectedSubject;
   const showChapterSelectionGuide =
-    Boolean(homeGuideKey) &&
+    Boolean(onboardingGuideKey) &&
     !isMilestone2GuidedQuiz &&
     onboardingGuideStep === "chapter" &&
     showQuizWorkspace &&
     isMathSelected &&
     !quizContext.inProgress;
   const showTopicStartGuide =
-    Boolean(homeGuideKey) &&
+    Boolean(onboardingGuideKey) &&
     !isMilestone2GuidedQuiz &&
     onboardingGuideStep === "topic" &&
     showQuizWorkspace &&
@@ -1848,7 +2007,7 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
     expandedChapterId === FIRST_GUIDED_CHAPTER_ID &&
     !quizContext.inProgress;
   const showQuestionReadGuide =
-    Boolean(homeGuideKey) &&
+    Boolean(onboardingGuideKey) &&
     !isMilestone2GuidedQuiz &&
     (
       onboardingGuideStep === "question" ||
@@ -1857,22 +2016,22 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
     ) &&
     showQuizAttempt;
   const showAnswerChoiceGuide =
-    Boolean(homeGuideKey) &&
+    Boolean(onboardingGuideKey) &&
     !isMilestone2GuidedQuiz &&
     onboardingGuideStep === "choices" &&
     showQuizAttempt;
   const showCorrectAnswerGuide =
-    Boolean(homeGuideKey) &&
+    Boolean(onboardingGuideKey) &&
     !isMilestone2GuidedQuiz &&
     (onboardingGuideStep === "answer" || onboardingGuideStep === "answer-third") &&
     showQuizAttempt;
   const showWrongAnswerGuide =
-    Boolean(homeGuideKey) &&
+    Boolean(onboardingGuideKey) &&
     !isMilestone2GuidedQuiz &&
     onboardingGuideStep === "answer-wrong" &&
     showQuizAttempt;
   const showSaveAnswerGuide =
-    Boolean(homeGuideKey) &&
+    Boolean(onboardingGuideKey) &&
     !isMilestone2GuidedQuiz &&
     (onboardingGuideStep === "save" || onboardingGuideStep === "save-wrong") &&
     showQuizAttempt &&
@@ -1905,7 +2064,7 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
   ]);
   const showGuidedAnswerGuide = showCorrectAnswerGuide || showWrongAnswerGuide;
   const showWrongResultGuidePending =
-    Boolean(homeGuideKey) &&
+    Boolean(onboardingGuideKey) &&
     !isMilestone2GuidedQuiz &&
     onboardingGuideStep === "wrong-result" &&
     showQuizAttempt &&
@@ -1913,26 +2072,30 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
   const showWrongResultGuide =
     showWrongResultGuidePending && quizContext.saved && !quizContext.isCorrect;
   const showProgressGuidePending =
-    Boolean(homeGuideKey) &&
+    Boolean(onboardingGuideKey) &&
     !isMilestone2GuidedQuiz &&
     onboardingGuideStep === "progress" &&
     showQuizAttempt &&
     (quizContext.checking || (quizContext.saved && quizContext.isCorrect));
   const showProgressBarGuide =
     showProgressGuidePending && quizContext.saved && quizContext.isCorrect;
+  const showThirdCorrectProgressCopy =
+    showProgressBarGuide &&
+    quizContext.currentIndex === THIRD_GUIDED_QUESTION_INDEX &&
+    quizContext.correctCount === 3;
   const showFinalProgressBarCopy =
     showProgressBarGuide &&
     isFinalQuizQuestion &&
     quizContext.correctCount < quizContext.total;
   const showWrongProgressBarGuide =
-    Boolean(homeGuideKey) &&
+    Boolean(onboardingGuideKey) &&
     !isMilestone2GuidedQuiz &&
     onboardingGuideStep === "progress-wrong" &&
     showQuizAttempt &&
     quizContext.saved &&
     !quizContext.isCorrect;
   const showExplanationGuide =
-    Boolean(homeGuideKey) &&
+    Boolean(onboardingGuideKey) &&
     !isMilestone2GuidedQuiz &&
     onboardingGuideStep === "explanation" &&
     showQuizAttempt &&
@@ -1940,7 +2103,7 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
     quizContext.isCorrect &&
     !isExplanationOpen;
   const showWrongExplanationGuide =
-    Boolean(homeGuideKey) &&
+    Boolean(onboardingGuideKey) &&
     !isMilestone2GuidedQuiz &&
     onboardingGuideStep === "explanation-wrong" &&
     showQuizAttempt &&
@@ -1948,7 +2111,7 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
     !quizContext.isCorrect &&
     !isExplanationOpen;
   const showContinueGuide =
-    Boolean(homeGuideKey) &&
+    Boolean(onboardingGuideKey) &&
     !isMilestone2GuidedQuiz &&
     onboardingGuideStep === "continue" &&
     showQuizAttempt &&
@@ -1956,7 +2119,7 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
     quizContext.isCorrect &&
     isExplanationOpen;
   const showWrongContinueGuide =
-    Boolean(homeGuideKey) &&
+    Boolean(onboardingGuideKey) &&
     !isMilestone2GuidedQuiz &&
     onboardingGuideStep === "continue-wrong" &&
     showQuizAttempt &&
@@ -1980,6 +2143,12 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
     ? `Take a moment to read first • ${Math.max(readGuideCountdown, 1)}s`
     : "Continue when you're ready 👇";
   const hasBlockingQuizAttemptGuide =
+    showMilestone2IntroGuide ||
+    showMilestone2ReadGuide ||
+    showMilestone2ChoiceGuide ||
+    showMilestone2ProgressGuide ||
+    showMilestone2FinalProgressGuide ||
+    showMilestone2BackToQuizGuide ||
     showQuestionReadGuide ||
     showAnswerChoiceGuide ||
     showGuidedAnswerGuide ||
@@ -1994,12 +2163,15 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
     showSubmitAnswer && !hasBlockingQuizAttemptGuide && !showQuizCompletionModal;
   const showVisibleContinueGuide =
     (showAnyContinueGuide || showFinalReviewCallout) && !showQuizCompletionModal;
-  const isQuizFocusMode = showQuizAttempt && !showQuizCompletionModal;
+  const isQuizFocusMode =
+    showQuizAttempt && !showQuizCompletionModal && !showMilestone2BackToQuizGuide;
   const showAppGuide =
     showHomeSubjectGuide ||
     showChapterSelectionGuide ||
     showTopicStartGuide ||
-    showQuizAttemptGuide;
+    showQuizAttemptGuide ||
+    showMilestone2PostReviewGuide ||
+    showMilestone3TopicGuide;
   const isAppChromeLocked = showAppGuide || isQuizFocusMode || isMissionGuideActive;
   const showLearnDropdown = learnMenuOpen && !isAppChromeLocked;
   const activeGuideTitleId = showTopicStartGuide
@@ -2092,12 +2264,15 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
   }, [showTopicStartGuide]);
 
   useEffect(() => {
-    if ((!showQuestionReadGuide && !showMilestone2ReadGuide) || !questionGuideRef.current) {
+    if (
+      (!showQuestionReadGuide && !showMilestone2IntroGuide && !showMilestone2ReadGuide) ||
+      !questionGuideRef.current
+    ) {
       return;
     }
 
     questionGuideRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [showMilestone2ReadGuide, showQuestionReadGuide]);
+  }, [showMilestone2IntroGuide, showMilestone2ReadGuide, showQuestionReadGuide]);
 
   useEffect(() => {
     if (!readGuideSessionKey) {
@@ -2159,12 +2334,25 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
   }, [showSaveAnswerGuide]);
 
   useEffect(() => {
-    if ((!showProgressBarGuide && !showWrongProgressBarGuide) || !progressGuideRef.current) {
+    if (
+      (
+        !showMilestone2ProgressGuide &&
+        !showMilestone2FinalProgressGuide &&
+        !showProgressBarGuide &&
+        !showWrongProgressBarGuide
+      ) ||
+      !progressGuideRef.current
+    ) {
       return;
     }
 
     progressGuideRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [showProgressBarGuide, showWrongProgressBarGuide]);
+  }, [
+    showMilestone2FinalProgressGuide,
+    showMilestone2ProgressGuide,
+    showProgressBarGuide,
+    showWrongProgressBarGuide,
+  ]);
 
   useEffect(() => {
     if (!showAnyExplanationGuide || !explanationGuideRef.current) {
@@ -2183,27 +2371,146 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
   }, [showVisibleContinueGuide]);
 
   useEffect(() => {
+    if (!showMilestone2BackToQuizGuide || !milestone2BackToQuizButtonRef.current) {
+      return;
+    }
+
+    milestone2BackToQuizButtonRef.current.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+    milestone2BackToQuizButtonRef.current.focus({ preventScroll: true });
+  }, [showMilestone2BackToQuizGuide]);
+
+  useEffect(() => {
+    if (!showMilestone2PostQuizTopicReview) {
+      const resetPostReviewGuideTimeout = window.setTimeout(() => {
+        setMilestone2PostReviewGuideStep(null);
+        setMilestone3TopicGuideStep(null);
+        setPendingMilestone3TopicGuideEntry(false);
+      }, 0);
+
+      return () => window.clearTimeout(resetPostReviewGuideTimeout);
+    }
+
+    if (!hasCompletedMilestone2PostReviewGuide && !milestone2PostReviewGuideStep) {
+      const startPostReviewGuideTimeout = window.setTimeout(() => {
+        setMilestone2PostReviewGuideStep("set-1");
+      }, 0);
+
+      return () => window.clearTimeout(startPostReviewGuideTimeout);
+    }
+
+    return undefined;
+  }, [
+    hasCompletedMilestone2PostReviewGuide,
+    milestone2PostReviewGuideStep,
+    showMilestone2PostQuizTopicReview,
+  ]);
+
+  useEffect(() => {
+    if (!showMilestone2PostQuizTopicReview || showMilestone2PostReviewGuide) {
+      return undefined;
+    }
+
+    if (
+      pendingMilestone3TopicGuideEntry &&
+      !hasCompletedMilestone3TopicGuide &&
+      !milestone3TopicGuideStep
+    ) {
+      const startMilestone3TopicGuideTimeout = window.setTimeout(() => {
+        setMilestone3TopicGuideStep("topic-stars");
+      }, 0);
+
+      return () => window.clearTimeout(startMilestone3TopicGuideTimeout);
+    }
+
+    return undefined;
+  }, [
+    hasCompletedMilestone3TopicGuide,
+    milestone3TopicGuideStep,
+    pendingMilestone3TopicGuideEntry,
+    showMilestone2PostQuizTopicReview,
+    showMilestone2PostReviewGuide,
+  ]);
+
+  useEffect(() => {
+    const guideAnchor = showMilestone2PostReviewSet1Guide
+      ? milestone2PostReviewSet1Ref.current
+      : showMilestone2PostReviewSet2Guide
+        ? milestone2PostReviewSet2Ref.current
+        : showMilestone2PostReviewSet3Guide
+          ? milestone2PostReviewSet3ButtonRef.current
+          : null;
+
+    if (!guideAnchor) {
+      return;
+    }
+
+    guideAnchor.scrollIntoView({ behavior: "smooth", block: "center" });
+    if ("focus" in guideAnchor) {
+      guideAnchor.focus({ preventScroll: true });
+    }
+  }, [
+    showMilestone2PostReviewSet1Guide,
+    showMilestone2PostReviewSet2Guide,
+    showMilestone2PostReviewSet3Guide,
+  ]);
+
+  useEffect(() => {
+    const guideAnchor = showMilestone3TopicStarsGuide
+      ? milestone3TopicStarsRef.current
+      : showMilestone3TopicStartGuide
+        ? milestone2PostReviewSet3ButtonRef.current
+        : null;
+
+    if (!guideAnchor) {
+      return;
+    }
+
+    guideAnchor.scrollIntoView({ behavior: "smooth", block: "center" });
+    if ("focus" in guideAnchor) {
+      guideAnchor.focus({ preventScroll: true });
+    }
+  }, [showMilestone3TopicStarsGuide, showMilestone3TopicStartGuide]);
+
+  useEffect(() => {
     if (pageContext.route === "mission") {
       return;
     }
 
-    setMissionGuideStep(null);
+    const resetMissionGuideTimeout = window.setTimeout(() => {
+      setMissionGuideStep(null);
+      setMissionGuideVariant(null);
+    }, 0);
+
+    return () => window.clearTimeout(resetMissionGuideTimeout);
   }, [pageContext.route]);
 
   useEffect(() => {
     if (!isMilestone2GuidedQuiz) {
-      setMilestone2GuideStep(null);
-      return;
+      const resetMilestoneGuideTimeout = window.setTimeout(() => {
+        setMilestone2GuideStep(null);
+      }, 0);
+
+      return () => window.clearTimeout(resetMilestoneGuideTimeout);
     }
 
-    if (!quizContext.saved && !quizContext.selectedOption) {
-      setMilestone2GuideStep("read");
+    if (!quizContext.saved && !quizContext.selectedOption && !milestone2GuideStep) {
+      const startMilestoneGuideTimeout = window.setTimeout(() => {
+        setMilestone2GuideStep(quizContext.currentIndex === 0 ? "intro" : "read");
+      }, 0);
+
+      return () => window.clearTimeout(startMilestoneGuideTimeout);
     }
+
+    return undefined;
   }, [
     isMilestone2GuidedQuiz,
     quizContext.currentIndex,
     quizContext.saved,
     quizContext.selectedOption,
+    milestone2GuideStep,
   ]);
 
   useEffect(() => {
@@ -2211,7 +2518,11 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
       return;
     }
 
-    setLearnMenuOpen(false);
+    const closeLearnMenuTimeout = window.setTimeout(() => {
+      setLearnMenuOpen(false);
+    }, 0);
+
+    return () => window.clearTimeout(closeLearnMenuTimeout);
   }, [isMissionGuideActive]);
 
   function selectSubject(subject) {
@@ -2296,6 +2607,7 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
     }
 
     setOpenExplanationFor(null);
+    setShowMilestone2TopicReview(false);
     actions.setRoute("practice");
     if (!pageContext.selectedSubject) {
       actions.setSelectedSubject("Mathematics");
@@ -2310,6 +2622,7 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
     }
 
     setOpenExplanationFor(null);
+    setShowMilestone2TopicReview(false);
     actions.setRoute("achievement");
     actions.stopQuiz();
   }
@@ -2320,6 +2633,7 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
     }
 
     setOpenExplanationFor(null);
+    setShowMilestone2TopicReview(false);
     actions.setSelectedSubject("Mathematics");
     actions.setSelectedTopic(topic);
     actions.setRoute("quiz");
@@ -2332,7 +2646,9 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
     }
 
     setOpenExplanationFor(null);
+    setShowMilestone2TopicReview(false);
     setExpandedChapterId(null);
+    setMissionGuideVariant(null);
     actions.openMissionHub();
   }
 
@@ -2342,6 +2658,7 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
     }
 
     setOpenExplanationFor(null);
+    setShowMilestone2TopicReview(false);
     setExpandedChapterId(null);
     actions.setSelectedSubject(null);
     actions.clearTopic();
@@ -2355,6 +2672,7 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
     }
 
     setOpenExplanationFor(null);
+    setShowMilestone2TopicReview(false);
     setExpandedChapterId(null);
     actions.setSelectedSubject("Mathematics");
     actions.clearTopic();
@@ -2363,10 +2681,34 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
   }
 
   function startTopicQuiz(topic, total = 5, options = {}) {
+    if (showMilestone2PostReviewGuide && !showMilestone2PostReviewSet3Guide) {
+      return;
+    }
+
+    if (showMilestone3TopicGuide && !showMilestone3TopicStartGuide) {
+      return;
+    }
+
+    if (showMilestone3TopicStartGuide) {
+      completeMilestone3TopicGuide();
+    }
+
+    if (showMilestone2PostReviewSet3Guide) {
+      completeMilestone2PostReviewGuide();
+      setMissionGuideVariant("milestone3-entry");
+      setMissionGuideStep(0);
+      setShowMilestone2TopicReview(false);
+      setExpandedChapterId(null);
+      actions.advanceMissionCheckpoint();
+      actions.openMissionHub();
+      return;
+    }
+
     setOpenExplanationFor(null);
     setLearnMenuOpen(false);
+    setShowMilestone2TopicReview(false);
     setOnboardingGuideStep(showTopicStartGuide ? "question" : null);
-    setMilestone2GuideStep(options.guideMode === "milestone2" ? "read" : null);
+    setMilestone2GuideStep(options.guideMode === "milestone2" ? "intro" : null);
     actions.setSelectedTopic(topic);
     actions.startQuiz({ topic, total, guideMode: options.guideMode });
   }
@@ -2374,7 +2716,12 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
   function handleChapterToggle(chapter) {
     const isExpandable = Boolean(chapter.topics?.length);
 
-    if (!isExpandable || showTopicStartGuide) {
+    if (
+      !isExpandable ||
+      showTopicStartGuide ||
+      showMilestone2PostReviewGuide ||
+      showMilestone3TopicGuide
+    ) {
       return;
     }
 
@@ -2397,7 +2744,7 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
   }
 
   function saveAnswer() {
-    if (showMilestone2ReadGuide || showMilestone2ChoiceGuide) {
+    if (showMilestone2IntroGuide || showMilestone2ReadGuide || showMilestone2ChoiceGuide) {
       return;
     }
 
@@ -2406,6 +2753,13 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
     }
 
     if (isMilestone2GuidedQuiz) {
+      setMilestone2GuideStep(
+        quizContext.currentIndex === THIRD_GUIDED_QUESTION_INDEX
+          ? "progress"
+          : isFinalQuizQuestion && quizContext.correctCount === quizContext.total - 1
+            ? "final-progress"
+            : null,
+      );
       actions.saveQuizAnswer();
       return;
     }
@@ -2437,7 +2791,12 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
   }
 
   function closeQuizCompletionModal() {
-    setCompletionGuideStep(QUIZ_COMPLETION_GUIDE_DONE_STEP);
+    if (showMilestone2CompletionCloseGuide) {
+      setMilestone2CompletionExitStep("back");
+    } else {
+      setMilestone2CompletionExitStep(null);
+    }
+    setCompletionGuideStep(completionGuideDoneStep);
     setQuizCompletionModal(null);
   }
 
@@ -2447,8 +2806,15 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
     }
 
     const nextGuideStep = completionGuideStep + 1;
-    if (nextGuideStep >= QUIZ_COMPLETION_GUIDE_DONE_STEP) {
-      setCompletionGuideStep(QUIZ_COMPLETION_GUIDE_DONE_STEP);
+    if (nextGuideStep >= completionGuideDoneStep) {
+      setCompletionGuideStep(completionGuideDoneStep);
+      if (quizContext.guideMode === "milestone2") {
+        setMilestone2CompletionExitStep("close");
+        window.setTimeout(() => {
+          completionCloseButtonRef.current?.focus();
+        }, 0);
+        return;
+      }
       window.setTimeout(() => {
         practiceNewSetButtonRef.current?.focus();
       }, 0);
@@ -2456,7 +2822,7 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
     }
 
     setCompletionGuideStep(nextGuideStep);
-    if (QUIZ_COMPLETION_GUIDE_STEPS[nextGuideStep] === "practice") {
+    if (completionGuideSteps[nextGuideStep] === "practice") {
       window.setTimeout(() => {
         practiceNewSetButtonRef.current?.focus();
       }, 0);
@@ -2464,6 +2830,7 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
   }
 
   function practiceNewSet() {
+    setMilestone2CompletionExitStep(null);
     closeQuizCompletionModal();
     if (missionContext.hasCompletedPracticeMissionGuide || !currentMissionMilestone) {
       startTopicQuiz(pageContext.selectedTopic || "Functions", quizContext.total);
@@ -2475,7 +2842,7 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
   }
 
   function advanceMissionGuideStep() {
-    if (!missionGuideSteps[missionGuideStep + 1]) {
+    if (!activeMissionGuideSteps[missionGuideStep + 1]) {
       return;
     }
 
@@ -2488,11 +2855,44 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
   }
 
   function skipMissionEntryPrompt() {
+    if (missionGuideVariant === "milestone3-entry") {
+      setMissionGuideStep(null);
+      setMissionGuideVariant(null);
+      setOpenExplanationFor(null);
+      setExpandedChapterId(null);
+      actions.setSelectedSubject(null);
+      actions.clearTopic();
+      actions.setRoute("home");
+      actions.stopQuiz();
+      navigate(APP_PATHS.app, { replace: true });
+      return;
+    }
+
     completePracticeMissionGuide();
-    actions.setRoute("practice");
+    setOpenExplanationFor(null);
+    setExpandedChapterId(null);
+    actions.setSelectedSubject(null);
+    actions.clearTopic();
+    actions.setRoute("home");
+    actions.stopQuiz();
+    navigate(APP_PATHS.app, { replace: true });
   }
 
   function continueMissionEntryPrompt() {
+    if (missionGuideVariant === "milestone3-entry") {
+      setMissionGuideStep(null);
+      setMissionGuideVariant(null);
+      setOpenExplanationFor(null);
+      setShowMilestone2TopicReview(true);
+      setExpandedChapterId(FIRST_GUIDED_CHAPTER_ID);
+      setPendingMilestone3TopicGuideEntry(true);
+      actions.setSelectedSubject("Mathematics");
+      actions.setSelectedTopic(pageContext.selectedTopic || "Functions");
+      actions.setRoute("quiz");
+      actions.stopQuiz();
+      return;
+    }
+
     completePracticeMissionGuide();
     startTopicQuiz(pageContext.selectedTopic || "Functions", quizContext.total, {
       guideMode: missionContext.hasCompletedMilestone2Guide ? null : "milestone2",
@@ -2504,8 +2904,17 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
       return;
     }
 
+    setMilestone2CompletionExitStep(null);
     closeQuizCompletionModal();
     startTopicQuiz(nextTopic, quizContext.total);
+  }
+
+  function backToQuizFromMilestone2CompletionGuide() {
+    setMilestone2CompletionExitStep(null);
+    setOpenExplanationFor(null);
+    setShowMilestone2TopicReview(true);
+    setExpandedChapterId(FIRST_GUIDED_CHAPTER_ID);
+    actions.stopQuiz();
   }
 
   function previousReviewQuestion() {
@@ -2526,10 +2935,10 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
     if (showContinueGuide) {
       let nextGuideStep = null;
 
-      if (Boolean(homeGuideKey) && quizContext.currentIndex === 0) {
+      if (Boolean(onboardingGuideKey) && quizContext.currentIndex === 0) {
         nextGuideStep = "question-wrong";
       } else if (
-        Boolean(homeGuideKey) &&
+        Boolean(onboardingGuideKey) &&
         quizContext.currentIndex >= THIRD_GUIDED_QUESTION_INDEX &&
         quizContext.currentIndex < quizContext.total - 1
       ) {
@@ -2549,7 +2958,7 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
 
     if (showWrongContinueGuide) {
       setOnboardingGuideStep(
-        Boolean(homeGuideKey) && quizContext.currentIndex === SECOND_GUIDED_QUESTION_INDEX
+        Boolean(onboardingGuideKey) && quizContext.currentIndex === SECOND_GUIDED_QUESTION_INDEX
           ? "question-later"
           : null,
       );
@@ -2568,6 +2977,7 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
 
   function selectAnswer(optionId) {
     if (
+      showMilestone2IntroGuide ||
       showMilestone2ReadGuide ||
       showQuestionReadGuide ||
       showAnswerChoiceGuide ||
@@ -2616,6 +3026,50 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
 
   function advanceMilestone2ChoiceGuide() {
     setMilestone2GuideStep("choose");
+  }
+
+  function advanceMilestone2IntroGuide() {
+    setMilestone2GuideStep("read");
+  }
+
+  function advanceMilestone2ProgressGuide() {
+    setMilestone2GuideStep(null);
+    setOpenExplanationFor(null);
+    actions.nextQuizQuestion();
+  }
+
+  function advanceMilestone2FinalProgressGuide() {
+    setMilestone2GuideStep(null);
+  }
+
+  function advanceMilestone2PostReviewGuide() {
+    if (showMilestone2PostReviewSet1Guide) {
+      setMilestone2PostReviewGuideStep("set-2");
+      return;
+    }
+
+    if (showMilestone2PostReviewSet2Guide) {
+      setMilestone2PostReviewGuideStep("set-3");
+    }
+  }
+
+  function completeMilestone2PostReviewGuide() {
+    persistMilestone2PostReviewGuideComplete(true);
+    setHasCompletedMilestone2PostReviewGuide(true);
+    setMilestone2PostReviewGuideStep(null);
+  }
+
+  function advanceMilestone3TopicGuide() {
+    if (showMilestone3TopicStarsGuide) {
+      setMilestone3TopicGuideStep("set-3-start");
+    }
+  }
+
+  function completeMilestone3TopicGuide() {
+    persistMilestone3TopicGuideComplete(true);
+    setHasCompletedMilestone3TopicGuide(true);
+    setMilestone3TopicGuideStep(null);
+    setPendingMilestone3TopicGuideEntry(false);
   }
 
   function advanceToChoiceGuide() {
@@ -2697,6 +3151,7 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
     }
     actions.setRoute(route);
     if (route === "home") {
+      setShowMilestone2TopicReview(false);
       setExpandedChapterId(null);
       actions.setSelectedSubject(null);
       actions.clearTopic();
@@ -2705,13 +3160,119 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
       setAnalysisSubjectId("kssm-am");
     }
     if (route === "achievement") {
+      setShowMilestone2TopicReview(false);
       actions.clearTopic();
     }
     if (route !== "quiz") {
+      setShowMilestone2TopicReview(false);
       setExpandedChapterId(null);
       actions.stopQuiz();
     }
   }
+
+  function resetInternalJumpSurface() {
+    setOpenExplanationFor(null);
+    setLearnMenuOpen(false);
+    setQuizCompletionModal(null);
+    setCompletionGuideStep(completionGuideDoneStep);
+    setMilestone2CompletionExitStep(null);
+    setShowMilestone2TopicReview(false);
+    setMissionGuideVariant(null);
+  }
+
+  function jumpToMilestone1() {
+    resetInternalJumpSurface();
+    setExpandedChapterId(null);
+    setMissionGuideStep(null);
+    setMilestone2GuideStep(null);
+    internalGuideJumpCountRef.current += 1;
+    setInternalOnboardingGuideKey(`internal-${internalGuideJumpCountRef.current}`);
+    setOnboardingGuideStep("subject");
+    actions.setSelectedSubject(null);
+    actions.clearTopic();
+    actions.setRoute("home");
+    actions.stopQuiz();
+  }
+
+  function jumpToMissionHub() {
+    resetInternalJumpSurface();
+    setExpandedChapterId(null);
+    setInternalOnboardingGuideKey(null);
+    setOnboardingGuideStep(null);
+    setMilestone2GuideStep(null);
+    setMissionGuideStep(0);
+    actions.unlockMissionHub();
+    actions.setRoute("mission");
+  }
+
+  function jumpToMilestone2(initialIndex = 0) {
+    resetInternalJumpSurface();
+    setExpandedChapterId(FIRST_GUIDED_CHAPTER_ID);
+    setInternalOnboardingGuideKey(null);
+    setOnboardingGuideStep(null);
+    setMissionGuideStep(null);
+    setMilestone2GuideStep(initialIndex === 0 ? "intro" : "read");
+    actions.setSelectedSubject("Mathematics");
+    actions.setSelectedTopic("Functions");
+    actions.startQuiz({
+      topic: "Functions",
+      total: 5,
+      guideMode: "milestone2",
+      initialIndex,
+    });
+  }
+
+  function jumpToMilestone2Review() {
+    resetInternalJumpSurface();
+    setExpandedChapterId(FIRST_GUIDED_CHAPTER_ID);
+    setInternalOnboardingGuideKey(null);
+    setOnboardingGuideStep(null);
+    setMissionGuideStep(null);
+    setMilestone2GuideStep(null);
+    setMilestone2CompletionExitStep(null);
+    setShowMilestone2TopicReview(true);
+    setMilestone2PostReviewGuideStep("set-1");
+    actions.setSelectedSubject("Mathematics");
+    actions.setSelectedTopic("Functions");
+    actions.setRoute("quiz");
+    actions.stopQuiz();
+  }
+
+  function handleInternalJump(targetId) {
+    if (targetId === "milestone-1") {
+      jumpToMilestone1();
+      return;
+    }
+
+    if (targetId === "mission-hub") {
+      jumpToMissionHub();
+      return;
+    }
+
+    if (targetId === "milestone-2-review") {
+      jumpToMilestone2Review();
+      return;
+    }
+
+    jumpToMilestone2(0);
+  }
+
+  const runPendingInternalJump = useEffectEvent((targetId) => {
+    handleInternalJump(targetId);
+    onPendingJumpHandled?.();
+  });
+
+  useEffect(() => {
+    if (!pendingJumpTarget) {
+      return;
+    }
+
+    const internalJumpTimeout = window.setTimeout(() => {
+      runPendingInternalJump(pendingJumpTarget);
+    }, 0);
+
+    return () => window.clearTimeout(internalJumpTimeout);
+  }, [pendingJumpTarget]);
 
   return (
     <>
@@ -2904,7 +3465,36 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
                 </div>
 
                 <article className="pandai-attempt-card">
-                  {showMilestone2ReadGuide ? (
+                  {showMilestone2IntroGuide ? (
+                    <div
+                      className="pandai-question-guide pandai-question-guide--milestone2"
+                      role="dialog"
+                      aria-labelledby="pandai-milestone2-intro-guide-title"
+                    >
+                      <img
+                        src={pbotMascot}
+                        alt=""
+                        aria-hidden="true"
+                        className="pandai-question-guide__mascot"
+                      />
+                      <div className="pandai-question-guide__bubble">
+                        <h3 id="pandai-milestone2-intro-guide-title">
+                          This is the first question of Set 2
+                        </h3>
+                        <p>
+                          This set starts your next mission milestone. I will guide all 5
+                          questions in this set.
+                        </p>
+                        <button
+                          type="button"
+                          className="pandai-question-guide__next"
+                          onClick={advanceMilestone2IntroGuide}
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  ) : showMilestone2ReadGuide ? (
                     <div
                       className="pandai-question-guide pandai-question-guide--milestone2"
                       role="dialog"
@@ -2919,7 +3509,7 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
                       <div className="pandai-question-guide__bubble">
                         <h3 id="pandai-milestone2-read-guide-title">Read the question first 👇</h3>
                         <p>
-                          Focus on the question and choices first. Lepas dah faham, tap next.
+                          Focus on the question and choices first. Once you understand it, tap Next.
                         </p>
                         <button
                           type="button"
@@ -2944,7 +3534,64 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
                       />
                       <div className="pandai-question-guide__bubble">
                         <h3 id="pandai-milestone2-choice-guide-title">Choose the correct answer</h3>
-                        <p>Untuk milestone ini, hanya jawapan betul boleh dipilih.</p>
+                        <p>For this milestone guide, only the correct answer can be selected.</p>
+                      </div>
+                    </div>
+                  ) : showMilestone2ProgressGuide ? (
+                    <div
+                      className="pandai-question-guide pandai-question-guide--progress"
+                      role="dialog"
+                      aria-labelledby="pandai-milestone2-progress-guide-title"
+                    >
+                      <img
+                        src={pbotMascot}
+                        alt=""
+                        aria-hidden="true"
+                        className="pandai-question-guide__mascot"
+                      />
+                      <div className="pandai-question-guide__bubble">
+                        <h3 id="pandai-milestone2-progress-guide-title">
+                          Nice job - you already got 3 correct answers! 🎉
+                        </h3>
+                        <p>
+                          You already got 3 out of 5 correct, so the bar is high now. There are
+                          2 questions left to push it higher 👇
+                        </p>
+                        <button
+                          type="button"
+                          className="pandai-question-guide__next"
+                          onClick={advanceMilestone2ProgressGuide}
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  ) : showMilestone2FinalProgressGuide ? (
+                    <div
+                      className="pandai-question-guide pandai-question-guide--progress"
+                      role="dialog"
+                      aria-labelledby="pandai-milestone2-final-progress-guide-title"
+                    >
+                      <img
+                        src={pbotMascot}
+                        alt=""
+                        aria-hidden="true"
+                        className="pandai-question-guide__mascot"
+                      />
+                      <div className="pandai-question-guide__bubble">
+                        <h3 id="pandai-milestone2-final-progress-guide-title">
+                          Nice job - your bar is full now! 🎉
+                        </h3>
+                        <p>
+                          You answered all 5 questions correctly, so the progress bar is full 👇
+                        </p>
+                        <button
+                          type="button"
+                          className="pandai-question-guide__next"
+                          onClick={advanceMilestone2FinalProgressGuide}
+                        >
+                          Next
+                        </button>
                       </div>
                     </div>
                   ) : showQuestionReadGuide ? (
@@ -3061,9 +3708,15 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
 
                   <div className="pandai-attempt-grid">
                     <div
-                      ref={showQuestionReadGuide || showMilestone2ReadGuide ? questionGuideRef : null}
+                      ref={
+                        showQuestionReadGuide || showMilestone2IntroGuide || showMilestone2ReadGuide
+                          ? questionGuideRef
+                          : null
+                      }
                       className={`pandai-attempt-question ${
-                        showQuestionReadGuide || showMilestone2ReadGuide ? "is-guide-focus" : ""
+                        showQuestionReadGuide || showMilestone2IntroGuide || showMilestone2ReadGuide
+                          ? "is-guide-focus"
+                          : ""
                       }`}
                     >
                       <p className="pandai-attempt-equation">{currentQuestion.prompt}</p>
@@ -3126,6 +3779,7 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
                               isGuideAnswerFocus || isGuideWrongAnswerFocus ? "is-guide-answer" : ""
                             } ${isGuideSaveFocus ? "is-guide-save-answer" : ""}`}
                             disabled={
+                              showMilestone2IntroGuide ||
                               showMilestone2ReadGuide ||
                               showQuestionReadGuide ||
                               showAnswerChoiceGuide ||
@@ -3210,7 +3864,21 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
                   </div>
                 </article>
 
-                <div className="pandai-attempt-footer">
+                <div
+                  className={`pandai-attempt-footer ${
+                    showMilestone2BackToQuizGuide ? "is-back-to-quiz-guided" : ""
+                  }`}
+                >
+                  {showMilestone2BackToQuizGuide ? (
+                    <button
+                      ref={milestone2BackToQuizButtonRef}
+                      type="button"
+                      className="pandai-attempt-back-guide-btn"
+                      onClick={backToQuizFromMilestone2CompletionGuide}
+                    >
+                      Back to Quiz
+                    </button>
+                  ) : null}
                   {quizContext.checking ? (
                     <span className="pandai-attempt-feedback">Thinking...</span>
                   ) : null}
@@ -3263,6 +3931,7 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
                       }`}
                       disabled={
                         showMilestone2ReadGuide ||
+                        showMilestone2IntroGuide ||
                         showMilestone2ChoiceGuide ||
                         showQuestionReadGuide ||
                         showAnswerChoiceGuide ||
@@ -3345,12 +4014,16 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
                     />
                     <div className="pandai-question-guide__bubble">
                       <h3 id="pandai-progress-guide-title">
-                        {showFinalProgressBarCopy
+                        {showThirdCorrectProgressCopy
+                          ? "Nice job - you already got 3 correct answers! 🎉"
+                          : showFinalProgressBarCopy
                           ? "Nice job - your last question is correct! 🎉"
                           : `Nice job - your ${ordinalQuestionLabel} is correct! 🎉`}
                       </h3>
                       <p>
-                        {showFinalProgressBarCopy
+                        {showThirdCorrectProgressCopy
+                          ? "You already got 3 out of 5 correct, so the bar is high now. There are 2 questions left to push it higher 👇"
+                          : showFinalProgressBarCopy
                           ? "This is your last question. The bar isn't full yet because of an earlier mistake 👇"
                           : `You're now on your ${ordinalQuestionLabel}. It grows as you answer correctly ✨`}
                       </p>
@@ -3453,12 +4126,36 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
                     </div>
                   </div>
                 ) : null}
+                {showMilestone2BackToQuizGuide ? (
+                  <div
+                    className="pandai-question-guide pandai-question-guide--back-to-quiz"
+                    role="dialog"
+                    aria-labelledby="pandai-milestone2-back-to-quiz-guide-title"
+                  >
+                    <img
+                      src={pbotMascot}
+                      alt=""
+                      aria-hidden="true"
+                      className="pandai-question-guide__mascot"
+                    />
+                    <div className="pandai-question-guide__bubble">
+                      <h3 id="pandai-milestone2-back-to-quiz-guide-title">
+                        Now go back to quiz
+                      </h3>
+                      <p>Close done. Tap Back to Quiz here to continue 👇</p>
+                    </div>
+                  </div>
+                ) : null}
               </section>
             ) : (
             <section
               className={`pandai-quiz-workspace ${
                 showChapterSelectionGuide ? "is-chapter-guided" : ""
-              } ${showTopicStartGuide ? "is-topic-guided" : ""}`}
+              } ${showTopicStartGuide ? "is-topic-guided" : ""} ${
+                showMilestone2PostReviewGuide || showMilestone3TopicGuide
+                  ? "is-post-review-guided"
+                  : ""
+              }`}
             >
               <aside className="pandai-quiz-left">
                 <div className="pandai-quiz-card">
@@ -3479,7 +4176,11 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
                   </div>
                 </div>
 
-                <div className="pandai-quiz-card">
+                <div
+                  className={`pandai-quiz-card ${
+                    showMilestone2PostQuizTopicReview ? "pandai-report-card--post-review" : ""
+                  }`}
+                >
                   <div className="pandai-quiz-card__head">
                     <h3>Report</h3>
                     <button
@@ -3490,22 +4191,56 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
                       View more
                     </button>
                   </div>
-                  <div className="pandai-report-list">
+                  <div
+                    className={`pandai-report-list ${
+                      showMilestone2PostQuizTopicReview ? "is-post-review" : ""
+                    }`}
+                  >
                     <div className="pandai-report-item">
-                      <span>Progress</span>
-                      <strong className="ok">SATISFACTORY</strong>
+                      {showMilestone2PostQuizTopicReview ? (
+                        <span className="pandai-report-item__icon" aria-hidden="true">
+                          📈
+                        </span>
+                      ) : null}
+                      <div className="pandai-report-item__copy">
+                        <span>Progress</span>
+                        <strong className="ok">
+                          {showMilestone2PostQuizTopicReview ? "CEMERLANG" : "SATISFACTORY"}
+                        </strong>
+                      </div>
                     </div>
                     <div className="pandai-report-item">
-                      <span>Score percentage</span>
-                      <strong>54%</strong>
+                      {showMilestone2PostQuizTopicReview ? (
+                        <span className="pandai-report-item__icon" aria-hidden="true">
+                          🪙
+                        </span>
+                      ) : null}
+                      <div className="pandai-report-item__copy">
+                        <span>Score percentage</span>
+                        <strong>{showMilestone2PostQuizTopicReview ? "90%" : "54%"}</strong>
+                      </div>
                     </div>
                     <div className="pandai-report-item">
-                      <span>Score grade</span>
-                      <strong>C</strong>
+                      {showMilestone2PostQuizTopicReview ? (
+                        <span className="pandai-report-item__icon" aria-hidden="true">
+                          🎖
+                        </span>
+                      ) : null}
+                      <div className="pandai-report-item__copy">
+                        <span>Score grade</span>
+                        <strong>{showMilestone2PostQuizTopicReview ? "A" : "C"}</strong>
+                      </div>
                     </div>
                     <div className="pandai-report-item">
-                      <span>Question answered</span>
-                      <strong>13</strong>
+                      {showMilestone2PostQuizTopicReview ? (
+                        <span className="pandai-report-item__icon" aria-hidden="true">
+                          ❔
+                        </span>
+                      ) : null}
+                      <div className="pandai-report-item__copy">
+                        <span>Question answered</span>
+                        <strong>{showMilestone2PostQuizTopicReview ? "10" : "13"}</strong>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -3569,6 +4304,10 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
                           } ${isGuideFocus ? "is-guide-focus" : ""} ${
                             isGuideLocked ? "is-guide-locked" : ""
                           } ${isExpandedFocus ? "is-expanded-focus" : ""} ${
+                            showMilestone2PostQuizTopicReview && chapter.id === FIRST_GUIDED_CHAPTER_ID
+                              ? "is-post-review-focus"
+                              : ""
+                          } ${
                             !isExpandable ? "is-static" : ""
                           }`}
                           aria-disabled={isGuideLocked || undefined}
@@ -3576,7 +4315,7 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
                           <button
                             type="button"
                             className="pandai-chapter-toggle"
-                            disabled={isGuideLocked || isExpandedFocus}
+                            disabled={isGuideLocked || isExpandedFocus || showMilestone3TopicGuide}
                             aria-expanded={isExpandable ? isExpanded : undefined}
                             aria-controls={isExpandable ? `chapter-panel-${chapter.id}` : undefined}
                             aria-describedby={isGuideFocus ? activeGuideTitleId : undefined}
@@ -3606,6 +4345,12 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
                                   const isTopicGuideFocus = showTopicStartGuide && topicIndex === 0;
                                   const isTopicGuideLocked =
                                     showTopicStartGuide && !isTopicGuideFocus;
+                                  const showMilestone2TopicSummary =
+                                    showMilestone2PostQuizTopicReview &&
+                                    chapter.id === FIRST_GUIDED_CHAPTER_ID &&
+                                    topicItem.id === "functions-set";
+                                  const isPostReviewActionLocked =
+                                    showMilestone2PostReviewGuide && !showMilestone2TopicSummary;
 
                                   return (
                                     <div
@@ -3615,36 +4360,321 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
                                         isAvailable ? "is-available" : "is-locked"
                                       } ${isTopicGuideFocus ? "is-guide-focus" : ""} ${
                                         isTopicGuideLocked ? "is-guide-locked" : ""
+                                      } ${
+                                        showMilestone2TopicSummary
+                                          ? "is-post-review-summary"
+                                          : showMilestone2PostQuizTopicReview
+                                            ? "is-post-review-topic"
+                                            : ""
                                       }`}
                                       aria-describedby={
                                         isTopicGuideFocus ? activeGuideTitleId : undefined
                                       }
                                     >
-                                      <div className="pandai-topic-set-row__main">
-                                        <span
-                                          className="pandai-topic-set-row__index"
-                                          aria-hidden="true"
-                                        >
-                                          {topicIndex + 1}
-                                        </span>
-                                        <span className="pandai-topic-set-row__label">
-                                          {topicItem.label}
-                                        </span>
-                                      </div>
+                                      {showMilestone2TopicSummary ? (
+                                        <>
+                                          <div className="pandai-topic-set-row__summary-head">
+                                            <span
+                                              ref={milestone3TopicStarsRef}
+                                              tabIndex={showMilestone3TopicStarsGuide ? -1 : undefined}
+                                              className={`pandai-topic-set-row__index ${
+                                                showMilestone3TopicStarsGuide ? "is-guide-focus" : ""
+                                              }`}
+                                              aria-hidden="true"
+                                            >
+                                              ★ 5
+                                            </span>
+                                            <span className="pandai-topic-set-row__label">
+                                              {topicItem.label}
+                                            </span>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            className="pandai-topic-set-row__collapse"
+                                            aria-label="Collapse topic sets"
+                                          >
+                                            ⌃
+                                          </button>
+                                          <div className="pandai-topic-set-review">
+                                            {MILESTONE2_POST_QUIZ_SET_SUMMARY.map((setItem) => (
+                                              <div
+                                                key={setItem.id}
+                                                ref={
+                                                  setItem.id === "set-1"
+                                                    ? milestone2PostReviewSet1Ref
+                                                    : setItem.id === "set-2"
+                                                      ? milestone2PostReviewSet2Ref
+                                                      : undefined
+                                                }
+                                                tabIndex={-1}
+                                                className={`pandai-topic-set-review__row is-${setItem.status} ${
+                                                  showMilestone2PostReviewSet1Guide &&
+                                                  setItem.id === "set-1"
+                                                    ? "is-guide-focus"
+                                                    : showMilestone2PostReviewSet2Guide &&
+                                                        setItem.id === "set-2"
+                                                      ? "is-guide-focus"
+                                                      : ""
+                                                }`}
+                                              >
+                                                <div
+                                                  className={`pandai-topic-set-review__stars ${
+                                                    showMilestone2PostReviewSet1Guide &&
+                                                    setItem.id === "set-1"
+                                                      ? "is-guide-focus"
+                                                      : showMilestone2PostReviewSet2Guide &&
+                                                          setItem.id === "set-2"
+                                                        ? "is-guide-focus"
+                                                        : ""
+                                                  }`}
+                                                  aria-label={`${setItem.stars} out of 3 stars`}
+                                                >
+                                                  {Array.from({ length: 3 }).map((_, starIndex) => (
+                                                    <span
+                                                      key={`${setItem.id}-${starIndex}`}
+                                                      className={
+                                                        starIndex < setItem.stars ? "is-active" : ""
+                                                      }
+                                                      aria-hidden="true"
+                                                    >
+                                                      ★
+                                                    </span>
+                                                  ))}
+                                                </div>
+                                                <span className="pandai-topic-set-review__label">
+                                                  {setItem.label}
+                                                </span>
+                                                {setItem.status === "available" ? (
+                                                  <button
+                                                    type="button"
+                                                    ref={
+                                                      setItem.id === "set-3"
+                                                        ? milestone2PostReviewSet3ButtonRef
+                                                        : undefined
+                                                    }
+                                                    className={`pandai-start-btn pandai-start-btn--compact ${
+                                                      showMilestone2PostReviewSet3Guide ||
+                                                      showMilestone3TopicStartGuide
+                                                        ? "is-guide-focus"
+                                                        : ""
+                                                    }`}
+                                                    disabled={
+                                                      (showMilestone2PostReviewGuide &&
+                                                        !showMilestone2PostReviewSet3Guide) ||
+                                                      (showMilestone3TopicGuide &&
+                                                        !showMilestone3TopicStartGuide)
+                                                    }
+                                                    onClick={() => startTopicQuiz(topicItem.topic, 5)}
+                                                  >
+                                                    Start
+                                                  </button>
+                                                ) : (
+                                                    <div className="pandai-topic-set-review__actions">
+                                                      <button
+                                                        type="button"
+                                                        className="pandai-topic-set-review__btn pandai-topic-set-review__btn--view"
+                                                        aria-label={`View ${setItem.label}`}
+                                                        disabled={
+                                                          showMilestone2PostReviewGuide ||
+                                                          showMilestone3TopicGuide
+                                                        }
+                                                      />
+                                                      <button
+                                                        type="button"
+                                                        className="pandai-topic-set-review__btn pandai-topic-set-review__btn--retry"
+                                                        aria-label={`Retry ${setItem.label}`}
+                                                        disabled={
+                                                          showMilestone2PostReviewGuide ||
+                                                          showMilestone3TopicGuide
+                                                        }
+                                                      >
+                                                        ↻
+                                                      </button>
+                                                    </div>
+                                                )}
 
-                                      {isAvailable ? (
+                                                {showMilestone2PostReviewSet1Guide &&
+                                                setItem.id === "set-1" ? (
+                                                  <div
+                                                    className="pandai-question-guide pandai-question-guide--post-review-set1"
+                                                    role="dialog"
+                                                    aria-labelledby="pandai-post-review-set1-title"
+                                                  >
+                                                    <img
+                                                      src={pbotMascot}
+                                                      alt=""
+                                                      aria-hidden="true"
+                                                      className="pandai-question-guide__mascot"
+                                                    />
+                                                    <div className="pandai-question-guide__bubble">
+                                                      <h3 id="pandai-post-review-set1-title">
+                                                        Set 1 gave you 2 stars
+                                                      </h3>
+                                                      <p>
+                                                        You got 4 answers correct, so this set earned 2
+                                                        stars.
+                                                      </p>
+                                                      <button
+                                                        type="button"
+                                                        className="pandai-question-guide__next"
+                                                        onClick={advanceMilestone2PostReviewGuide}
+                                                      >
+                                                        Next
+                                                      </button>
+                                                    </div>
+                                                  </div>
+                                                ) : null}
+
+                                                {showMilestone2PostReviewSet2Guide &&
+                                                setItem.id === "set-2" ? (
+                                                  <div
+                                                    className="pandai-question-guide pandai-question-guide--post-review-set2"
+                                                    role="dialog"
+                                                    aria-labelledby="pandai-post-review-set2-title"
+                                                  >
+                                                    <img
+                                                      src={pbotMascot}
+                                                      alt=""
+                                                      aria-hidden="true"
+                                                      className="pandai-question-guide__mascot"
+                                                    />
+                                                    <div className="pandai-question-guide__bubble">
+                                                      <h3 id="pandai-post-review-set2-title">
+                                                        Set 2 earned full stars
+                                                      </h3>
+                                                      <p>
+                                                        Great job. You got all 5 answers correct with no
+                                                        mistakes, so this set earned all 3 stars.
+                                                      </p>
+                                                      <button
+                                                        type="button"
+                                                        className="pandai-question-guide__next"
+                                                        onClick={advanceMilestone2PostReviewGuide}
+                                                      >
+                                                        Next
+                                                      </button>
+                                                    </div>
+                                                  </div>
+                                                ) : null}
+
+                                                {showMilestone2PostReviewSet3Guide &&
+                                                setItem.id === "set-3" ? (
+                                                  <div
+                                                    className="pandai-question-guide pandai-question-guide--post-review-set3"
+                                                    role="dialog"
+                                                    aria-labelledby="pandai-post-review-set3-title"
+                                                  >
+                                                    <img
+                                                      src={pbotMascot}
+                                                      alt=""
+                                                      aria-hidden="true"
+                                                      className="pandai-question-guide__mascot"
+                                                    />
+                                                    <div className="pandai-question-guide__bubble">
+                                                      <h3 id="pandai-post-review-set3-title">
+                                                        Set 3 is ready
+                                                      </h3>
+                                                      <p>
+                                                        Nice work. You have unlocked the next set. Tap
+                                                        Start to continue.
+                                                      </p>
+                                                    </div>
+                                                  </div>
+                                                ) : null}
+
+                                                {showMilestone3TopicStartGuide &&
+                                                setItem.id === "set-3" ? (
+                                                  <div
+                                                    className="pandai-question-guide pandai-question-guide--post-review-set3 pandai-question-guide--milestone3-topic-start"
+                                                    role="dialog"
+                                                    aria-labelledby="pandai-milestone3-topic-start-title"
+                                                  >
+                                                    <img
+                                                      src={pbotMascot}
+                                                      alt=""
+                                                      aria-hidden="true"
+                                                      className="pandai-question-guide__mascot"
+                                                    />
+                                                    <div className="pandai-question-guide__bubble">
+                                                      <h3 id="pandai-milestone3-topic-start-title">
+                                                        Set 3 is ready
+                                                      </h3>
+                                                      <p>You can continue now. Tap Start to begin Set 3.</p>
+                                                    </div>
+                                                  </div>
+                                                ) : null}
+                                              </div>
+                                            ))}
+                                          </div>
+
+                                          {showMilestone3TopicStarsGuide ? (
+                                            <div
+                                              className="pandai-question-guide pandai-question-guide--post-review-topic-stars"
+                                              role="dialog"
+                                              aria-labelledby="pandai-post-review-topic-stars-title"
+                                            >
+                                              <img
+                                                src={pbotMascot}
+                                                alt=""
+                                                aria-hidden="true"
+                                                className="pandai-question-guide__mascot"
+                                              />
+                                              <div className="pandai-question-guide__bubble">
+                                                <h3 id="pandai-post-review-topic-stars-title">
+                                                  These are your stars so far
+                                                </h3>
+                                                <p>
+                                                  Before we start Set 3, I want to show you your total
+                                                  stars for this topic. Let&apos;s collect more stars.
+                                                </p>
+                                                <button
+                                                  type="button"
+                                                  className="pandai-question-guide__next"
+                                                  onClick={advanceMilestone3TopicGuide}
+                                                >
+                                                  Next
+                                                </button>
+                                              </div>
+                                            </div>
+                                          ) : null}
+                                        </>
+                                      ) : (
+                                        <div className="pandai-topic-set-row__main">
+                                          <span
+                                            className="pandai-topic-set-row__index"
+                                            aria-hidden="true"
+                                          >
+                                            {showMilestone2PostQuizTopicReview ? "★ 0" : topicIndex + 1}
+                                          </span>
+                                          <div className="pandai-topic-set-row__copy">
+                                            <span className="pandai-topic-set-row__label">
+                                              {topicItem.label}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {!showMilestone2TopicSummary && isAvailable ? (
                                         <button
                                           type="button"
                                           className="pandai-start-btn pandai-start-btn--compact"
+                                          disabled={
+                                            showMilestone2PostReviewGuide || showMilestone3TopicGuide
+                                          }
                                           onClick={() => startTopicQuiz(topicItem.topic, 5)}
                                         >
                                           Start
                                         </button>
-                                      ) : (
-                                        <span className="pandai-topic-set-row__coin" aria-hidden="true">
+                                      ) : !showMilestone2TopicSummary ? (
+                                        <span
+                                          className={`pandai-topic-set-row__coin ${
+                                            isPostReviewActionLocked ? "is-disabled" : ""
+                                          }`}
+                                          aria-hidden="true"
+                                        >
                                           🪙
                                         </span>
-                                      )}
+                                      ) : null}
                                     </div>
                                   );
                                 })}
@@ -3659,8 +4689,8 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
                   <div className="pandai-quiz-card pandai-unsupported">
                     <h3>{pageContext.selectedSubject}</h3>
                     <p>
-                      PBot prototype sekarang support Mathematics sahaja. Sila
-                      pilih Mathematics untuk teruskan.
+                      This PBot prototype currently supports Mathematics only. Please
+                      choose Mathematics to continue.
                     </p>
                     <button
                       type="button"
@@ -3674,30 +4704,84 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
               </div>
 
               <aside className="pandai-quiz-right">
-                <div className="pandai-score-chips">
-                  <span className="chip-score">🏅 5 Score</span>
-                  <span className="chip-coins">🪙 1 Coins</span>
+                <div
+                  className={`pandai-score-chips ${
+                    showMilestone2PostQuizTopicReview ? "is-post-review" : ""
+                  }`}
+                >
+                  <span className="chip-score">
+                    🏅 {showMilestone2PostQuizTopicReview ? 9 : 5} Score
+                  </span>
+                  <span className="chip-coins">
+                    🪙 {showMilestone2PostQuizTopicReview ? 22 : 1} Coins
+                  </span>
                   <span className="chip-streak">🔥 0 Streak</span>
-                  <span className="chip-heart">❤ ∞</span>
+                  <span className="chip-heart">
+                    ❤ {showMilestone2PostQuizTopicReview ? "5 Full" : "∞"}
+                  </span>
                 </div>
 
-                <div className="pandai-quiz-card">
+                <div
+                  className={`pandai-quiz-card ${
+                    showMilestone2PostQuizTopicReview ? "pandai-badges-card--post-review" : ""
+                  }`}
+                >
                   <div className="pandai-quiz-card__head">
                     <h3>Badges</h3>
                     <Link to={APP_PATHS.app}>View more</Link>
                   </div>
                   <div className="pandai-badge-item">
-                    <div className="pandai-badge-title">STREAK</div>
-                    <div className="pandai-badge-sub">9 days more to go</div>
-                    <div className="pandai-badge-bar">
-                      <span style={{ width: "78%" }} />
+                    {showMilestone2PostQuizTopicReview ? (
+                      <div className="pandai-badge-medal" aria-hidden="true">
+                        2 DAYS
+                      </div>
+                    ) : null}
+                    <div className="pandai-badge-content">
+                      {showMilestone2PostQuizTopicReview ? (
+                        <div className="pandai-badge-kicker">Upcoming</div>
+                      ) : null}
+                      <div className="pandai-badge-title">STREAK</div>
+                      <div className="pandai-badge-sub">
+                        {showMilestone2PostQuizTopicReview ? "1 days more to go" : "9 days more to go"}
+                      </div>
+                      <div className="pandai-badge-progress">
+                        <div className="pandai-badge-bar">
+                          <span
+                            style={{ width: showMilestone2PostQuizTopicReview ? "50%" : "78%" }}
+                          />
+                        </div>
+                        {showMilestone2PostQuizTopicReview ? (
+                          <span className="pandai-badge-progress__label">Streak 2</span>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                   <div className="pandai-badge-item">
-                    <div className="pandai-badge-title">SCORE</div>
-                    <div className="pandai-badge-sub">995 more points to go</div>
-                    <div className="pandai-badge-bar">
-                      <span style={{ width: "8%" }} />
+                    {showMilestone2PostQuizTopicReview ? (
+                      <div className="pandai-badge-medal pandai-badge-medal--score" aria-hidden="true">
+                        10
+                      </div>
+                    ) : null}
+                    <div className="pandai-badge-content">
+                      {showMilestone2PostQuizTopicReview ? (
+                        <div className="pandai-badge-kicker">Upcoming</div>
+                      ) : null}
+                      <div className="pandai-badge-title">SCORE</div>
+                      <div className="pandai-badge-sub">
+                        {showMilestone2PostQuizTopicReview
+                          ? "1 more points to go"
+                          : "995 more points to go"}
+                      </div>
+                      <div className="pandai-badge-progress">
+                        <div className="pandai-badge-bar">
+                          <span
+                            style={{ width: showMilestone2PostQuizTopicReview ? "90%" : "8%" }}
+                          />
+                        </div>
+                        {showMilestone2PostQuizTopicReview ? (
+                          <span className="pandai-badge-progress__label">Score 10</span>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -3845,6 +4929,7 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
               aria-labelledby="pandai-quiz-completion-title"
             >
               <button
+                ref={showMilestone2CompletionCloseGuide ? completionCloseButtonRef : null}
                 type="button"
                 className="pandai-quiz-completion__close"
                 aria-label="Close quiz completion summary"
@@ -3917,23 +5002,25 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
                   />
                   <strong>+ {completionCoinReward}</strong>
                 </div>
-                <div
-                  className={`pandai-quiz-completion__stat is-negative ${
-                    isRewardCompletionGuideStep && completionGuideStep === 2 ? "is-guide-active" : ""
-                  } ${
-                    isRewardCompletionGuideStep && completionGuideStep !== 2
-                      ? "is-guide-dimmed"
-                      : ""
-                  }`}
-                >
-                  <img
-                    src={completionHeartIcon}
-                    alt=""
-                    aria-hidden="true"
-                    className="pandai-quiz-completion__stat-icon pandai-quiz-completion__stat-icon--heart"
-                  />
-                  <strong>{completionHeartDelta}</strong>
-                </div>
+                {incorrectCount > 0 ? (
+                  <div
+                    className={`pandai-quiz-completion__stat is-negative ${
+                      isRewardCompletionGuideStep && completionGuideStep === 2 ? "is-guide-active" : ""
+                    } ${
+                      isRewardCompletionGuideStep && completionGuideStep !== 2
+                        ? "is-guide-dimmed"
+                        : ""
+                    }`}
+                  >
+                    <img
+                      src={completionHeartIcon}
+                      alt=""
+                      aria-hidden="true"
+                      className="pandai-quiz-completion__stat-icon pandai-quiz-completion__stat-icon--heart"
+                    />
+                    <strong>{completionHeartDelta}</strong>
+                  </div>
+                ) : null}
 
                 {isRewardCompletionGuideStep && completionGuideCopy ? (
                   <div
@@ -3965,6 +5052,19 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
                 ) : null}
               </div>
 
+              {showMilestone2CompletionCloseGuide ? (
+                <div
+                  className="pandai-question-guide pandai-question-guide--completion-close"
+                  role="dialog"
+                  aria-labelledby="pandai-milestone2-close-guide-title"
+                >
+                  <div className="pandai-question-guide__bubble pandai-quiz-completion__guide-bubble">
+                    <h3 id="pandai-milestone2-close-guide-title">Close this summary</h3>
+                    <p>Tap the X first, then I will show you the next step 👇</p>
+                  </div>
+                </div>
+              ) : null}
+
               <div
                 className={`pandai-quiz-completion__actions ${
                   isPracticeCompletionGuideStep ? "is-practice-guided" : ""
@@ -3973,7 +5073,11 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
                 <button
                   type="button"
                   className="pandai-quiz-completion__btn pandai-quiz-completion__btn--ghost"
-                  disabled={isCompletionGuideActive || !nextTopic}
+                  disabled={
+                    disableMilestone2CompletionActions ||
+                    isCompletionGuideActive ||
+                    !nextTopic
+                  }
                   onClick={startNextTopicQuiz}
                 >
                   Next topic {nextTopic ? "🪙" : ""}
@@ -4003,11 +5107,15 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
                     type="button"
                     ref={practiceNewSetButtonRef}
                     className={`pandai-quiz-completion__btn pandai-quiz-completion__btn--solid ${
-                      isPracticeCompletionGuideStep || !isCompletionGuideActive
+                      !disableMilestone2CompletionActions &&
+                      (isPracticeCompletionGuideStep || !isCompletionGuideActive)
                         ? "is-guide-focus"
                         : ""
                     }`}
-                    disabled={isCompletionGuideActive && !isPracticeCompletionGuideStep}
+                    disabled={
+                      disableMilestone2CompletionActions ||
+                      (isCompletionGuideActive && !isPracticeCompletionGuideStep)
+                    }
                     onClick={practiceNewSet}
                   >
                     Practise new set
@@ -4025,8 +5133,12 @@ function AppShell({ selectedReward, initialRoute = "home" }) {
 }
 
 export default function App() {
+  const navigate = useNavigate();
   const [onboardingProfile, setOnboardingProfile] = useState(createInitialOnboardingProfile);
   const [onboardingSessionId] = useState(createOnboardingSessionId);
+  const [internalJumpOpen, setInternalJumpOpen] = useState(false);
+  const [pendingJumpTarget, setPendingJumpTarget] = useState(null);
+  const canShowInternalJump = hasLearnerName(onboardingProfile);
 
   useEffect(() => {
     if (onboardingProfile.preferredLanguage) {
@@ -4046,61 +5158,137 @@ export default function App() {
     onboardingProfile.selectedReward,
   ]);
 
+  function handleGlobalInternalJump(targetId) {
+    setInternalJumpOpen(false);
+    setOnboardingProfile((current) => ({
+      preferredLanguage: current.preferredLanguage || "en",
+      learnerName: normalizeLearnerName(current.learnerName) || "Designer",
+      selectedReward: current.selectedReward || REWARD_OPTIONS[0].id,
+    }));
+    setPendingJumpTarget(targetId);
+    navigate(APP_PATHS.app);
+  }
+
+  function handleResetOnboarding() {
+    setInternalJumpOpen(false);
+    setPendingJumpTarget(null);
+    clearOnboardingProfileStorage();
+    setOnboardingProfile(createEmptyOnboardingProfile());
+    navigate(APP_PATHS.onboarding, { replace: true });
+  }
+
   return (
-    <Routes>
-      <Route
-        path={APP_PATHS.onboarding}
-        element={
-          <PrototypeOnboardingPage
-            onboardingProfile={onboardingProfile}
-            setOnboardingProfile={setOnboardingProfile}
-          />
-        }
-      />
-      <Route
-        path={APP_PATHS.onboardingName}
-        element={
-          <PrototypeNamePage
-            onboardingProfile={onboardingProfile}
-            onboardingSessionId={onboardingSessionId}
-            setOnboardingProfile={setOnboardingProfile}
-          />
-        }
-      />
-      <Route
-        path={APP_PATHS.onboardingReward}
-        element={
-          <PrototypeRewardPage
-            onboardingProfile={onboardingProfile}
-            setOnboardingProfile={setOnboardingProfile}
-          />
-        }
-      />
-      <Route
-        path={APP_PATHS.onboardingMission}
-        element={<PrototypeMissionPage onboardingProfile={onboardingProfile} />}
-      />
-      <Route
-        path={APP_PATHS.missionHub}
-        element={
-          <PrototypeAppPage
-            onboardingProfile={onboardingProfile}
-            initialRoute="mission"
-          />
-        }
-      />
-      <Route
-        path={`${APP_PATHS.app}/*`}
-        element={<PrototypeAppPage onboardingProfile={onboardingProfile} />}
-      />
-      {LEGACY_PATH_REDIRECTS.map((route) => (
+    <>
+      <Routes>
         <Route
-          key={route.from}
-          path={route.from}
-          element={<Navigate to={route.to} replace />}
+          path={APP_PATHS.onboarding}
+          element={
+            <PrototypeOnboardingPage
+              onboardingProfile={onboardingProfile}
+              setOnboardingProfile={setOnboardingProfile}
+            />
+          }
         />
-      ))}
-      <Route path="*" element={<Navigate to={APP_PATHS.onboarding} replace />} />
-    </Routes>
+        <Route
+          path={APP_PATHS.onboardingName}
+          element={
+            <PrototypeNamePage
+              onboardingProfile={onboardingProfile}
+              onboardingSessionId={onboardingSessionId}
+              setOnboardingProfile={setOnboardingProfile}
+            />
+          }
+        />
+        <Route
+          path={APP_PATHS.onboardingReward}
+          element={
+            <PrototypeRewardPage
+              onboardingProfile={onboardingProfile}
+              setOnboardingProfile={setOnboardingProfile}
+            />
+          }
+        />
+        <Route
+          path={APP_PATHS.onboardingMission}
+          element={<PrototypeMissionPage onboardingProfile={onboardingProfile} />}
+        />
+        <Route
+          path={APP_PATHS.missionHub}
+          element={
+            <PrototypeAppPage
+              onboardingProfile={onboardingProfile}
+              initialRoute="mission"
+              pendingJumpTarget={pendingJumpTarget}
+              onPendingJumpHandled={() => setPendingJumpTarget(null)}
+            />
+          }
+        />
+        <Route
+          path={`${APP_PATHS.app}/*`}
+          element={
+            <PrototypeAppPage
+              onboardingProfile={onboardingProfile}
+              pendingJumpTarget={pendingJumpTarget}
+              onPendingJumpHandled={() => setPendingJumpTarget(null)}
+            />
+          }
+        />
+        {LEGACY_PATH_REDIRECTS.map((route) => (
+          <Route
+            key={route.from}
+            path={route.from}
+            element={<Navigate to={route.to} replace />}
+          />
+        ))}
+        <Route path="*" element={<Navigate to={APP_PATHS.onboarding} replace />} />
+      </Routes>
+
+      {canShowInternalJump ? (
+        <div className="pandai-internal-jump">
+          {internalJumpOpen ? (
+            <div
+              className="pandai-internal-jump__panel"
+              role="menu"
+              aria-label="Internal onboarding jump targets"
+            >
+              <div className="pandai-internal-jump__header">
+                <div className="pandai-internal-jump__header-copy">
+                  <span>Jump Navigator</span>
+                  <small>Internal use only</small>
+                </div>
+                <button
+                  type="button"
+                  className="pandai-internal-jump__reset"
+                  onClick={handleResetOnboarding}
+                >
+                  Reset
+                </button>
+              </div>
+              <div className="pandai-internal-jump__list">
+                {INTERNAL_JUMP_TARGETS.map((target) => (
+                  <button
+                    key={target.id}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => handleGlobalInternalJump(target.id)}
+                  >
+                    {target.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          <button
+            type="button"
+            className="pandai-internal-jump__trigger"
+            aria-expanded={internalJumpOpen}
+            aria-label="Toggle internal onboarding jump tool"
+            onClick={() => setInternalJumpOpen((current) => !current)}
+          >
+            Internal use only
+          </button>
+        </div>
+      ) : null}
+    </>
   );
 }
